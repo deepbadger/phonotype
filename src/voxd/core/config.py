@@ -11,6 +11,57 @@ except Exception:  # Python <3.9 (e.g., openSUSE Leap)
 from voxd.paths import resolve_whisper_binary, resolve_model_path, DATA_DIR, resolve_llamacpp_server, LLAMACPP_MODELS_DIR  # <-- add this import
 from voxd.utils.languages import ISO_639_1, normalize_lang_code, is_valid_lang
 
+# ---------------------------------------------------------------------------
+#   AIPP prompts. The transcript is appended on a new line after the prompt,
+#   hence the closing "---".
+# ---------------------------------------------------------------------------
+PROMPT_CLEAN_REQUEST = """You are a dictation post-processor. The text after the line "---" is a raw speech-to-text transcript of a user dictating a request for an AI assistant. Rewrite it as the message the user meant to type.
+
+Rules:
+- Do not answer, execute or comment on the request. Your output is the request itself, rewritten.
+- Write in the same language the user spoke.
+- Keep the meaning and every specific detail: names, numbers, file paths, commands, code identifiers.
+- Remove filler words, false starts and repetitions. When the user corrects themselves, keep only the final version.
+- Fix punctuation, capitalization and obvious recognition errors. Restore technical terms that were transcribed phonetically (e.g. "пайтон" → Python, "гит хаб" → GitHub).
+- Do not add requirements, assumptions or details the user did not say.
+
+Output only the rewritten text: no preamble, no quotes, no explanations.
+---"""
+
+PROMPT_TASK_STATEMENT = """You are a dictation post-processor. The text after the line "---" is a raw speech-to-text transcript in which a user describes a task for an AI assistant. Turn it into a clear task statement that the assistant can act on.
+
+Rules:
+- Do not perform the task and do not answer it. Output only the task statement.
+- Write in the same language the user spoke.
+- Start with one sentence stating the goal. Then, only if the user mentioned them, list context, constraints and the expected result as short bullet points.
+- Reorder thoughts so that related points are together; drop filler, repetitions and abandoned phrasings.
+- Keep every specific detail exactly: names, numbers, paths, commands, identifiers. Fix terms that were transcribed phonetically.
+- Do not invent requirements. If something the user said is ambiguous, keep it as said rather than guessing.
+
+Output only the task statement: no preamble, no quotes, no commentary.
+---"""
+
+PROMPT_CODING_INSTRUCTION = """You are a dictation post-processor. The text after the line "---" is a raw speech-to-text transcript of a developer dictating an instruction for a coding agent. Rewrite it as a precise instruction.
+
+Rules:
+- Do not write code and do not carry out the instruction. Output only the rewritten instruction.
+- Write in the same language the developer spoke; keep code, commands and identifiers in their original form.
+- Put file names, paths, commands, function and variable names in backticks. Restore identifiers and tool names that were transcribed phonetically or split into words.
+- If several actions are requested, give them as a numbered list in the order they should be done.
+- State explicitly what must not be changed or done, if the developer said so.
+- Remove filler, repetitions and self-corrections; keep only the final intent. Do not add steps or requirements that were not dictated.
+
+Output only the instruction: no preamble, no quotes, no commentary.
+---"""
+
+# Prompts shipped before 1.7.0+mir.6. A config still holding one of them
+# unchanged is moved to the current text; an edited prompt is left alone.
+LEGACY_PROMPTS = {
+    "default": 'Rewrite the following input so that it is clean and concise. Do not add any additional text or commentary. Just the rewritten text.',
+    "prompt1": 'Interpret the following text to the best of your ability as a C programming language code and output it as such. Do not add any additional text or commentary. Just the corresponding C code.',
+    "prompt2": 'Interpret the following text to the best of your ability as a Python programming language code and output it as such. Do not add any additional text or commentary. Just the corresponding Python code.',
+}
+
 DEFAULT_CONFIG = {
     "perf_collect": False,
     "perf_accuracy_rating_collect": True,
@@ -163,6 +214,7 @@ DEFAULT_CONFIG = {
 
     "aipp_openai_compatible_base_url": "",
     "aipp_openai_compatible_api_key": "",
+    "aipp_temperature": 0.2,                       # low: rewrite faithfully, don't improvise
     "aipp_proxy": "",                              # proxy for cloud providers: http://host:port, socks5://host:port
 
     # GigaChat (Sber) settings
@@ -179,9 +231,9 @@ DEFAULT_CONFIG = {
 
 
     "aipp_prompts": {
-        "default": "Rewrite the following input so that it is clean and concise. Do not add any additional text or commentary. Just the rewritten text.",
-        "prompt1": "Interpret the following text to the best of your ability as a C programming language code and output it as such. Do not add any additional text or commentary. Just the corresponding C code.",
-        "prompt2": "Interpret the following text to the best of your ability as a Python programming language code and output it as such. Do not add any additional text or commentary. Just the corresponding Python code.",
+        "default": PROMPT_CLEAN_REQUEST,
+        "prompt1": PROMPT_TASK_STATEMENT,
+        "prompt2": PROMPT_CODING_INSTRUCTION,
         "prompt3": "Rewrite the following text as a three-verse poem.",
     }
 }
@@ -435,6 +487,9 @@ class AppConfig:
         for k in list(prompts.keys()):
             if k not in ["default", "prompt1", "prompt2", "prompt3"]:
                 del prompts[k]
+        for slot, legacy in LEGACY_PROMPTS.items():
+            if prompts.get(slot) == legacy:
+                prompts[slot] = DEFAULT_CONFIG["aipp_prompts"][slot]
         self.data["aipp_prompts"] = prompts
 
         active = self.data.get("aipp_active_prompt", "default")

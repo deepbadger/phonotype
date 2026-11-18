@@ -18,7 +18,7 @@ from voxd.core.voxd_core import (
     show_performance_dialog,
 )
 from voxd.utils.performance import update_last_perf_entry
-from voxd.gui.settings_window import PROMPT_SLOTS, prompt_title
+from voxd.gui.settings_window import PROMPT_SLOTS, prompt_label
 
 # ──────────────────────────────────────────────────────────────────────────────
 #  Icon resources & animation frames
@@ -90,11 +90,6 @@ def elide_middle(text: str, limit: int) -> str:
     keep = limit - 1
     head = (keep + 1) // 2
     return text[:head] + "…" + text[len(text) - (keep - head):]
-
-
-def elide_end(text: str, limit: int) -> str:
-    text = str(text or "")
-    return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
 
 
 def short_model_name(fname: str, limit: int = 30) -> str:
@@ -284,8 +279,7 @@ class VoxdTrayApp(QObject):
         active_prompt = self.cfg.data.get("aipp_active_prompt", "default")
         group = QActionGroup(aipp_menu)
         for key in PROMPT_SLOTS:
-            text = " ".join(str(self.cfg.data.get("aipp_prompts", {}).get(key, "")).split())
-            label = f"{prompt_title(key)}: {elide_end(text, 38)}" if text else f"{prompt_title(key)} (empty)"
+            label = prompt_label(key, self.cfg.data.get("aipp_prompts", {}).get(key, ""))
             act = QAction(label, aipp_menu, checkable=True)
             act.setActionGroup(group)
             act.setChecked(key == active_prompt)

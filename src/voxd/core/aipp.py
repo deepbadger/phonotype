@@ -20,6 +20,7 @@ PROVIDER_URLS = {
     "openrouter": "https://openrouter.ai/api/v1/models",
 }
 
+_temperature = 0.2   # sampling temperature for the request in progress (config aipp_temperature)
 _proxy = ""   # normalized proxy URL for the request in progress (set by run_aipp)
 
 
@@ -135,7 +136,11 @@ def run_aipp(text: str, cfg, prompt_key: str = None) -> str:
     full_prompt = f"{prompt}\n{text.strip()}"
 
     provider = cfg.data.get("aipp_provider", "local")
-    global _proxy
+    global _proxy, _temperature
+    try:
+        _temperature = min(1.0, max(0.0, float(cfg.data.get("aipp_temperature", 0.2))))
+    except (TypeError, ValueError):
+        _temperature = 0.2
     try:
         _proxy = normalize_proxy(cfg.data.get("aipp_proxy", ""))
     except ValueError as e:
@@ -190,7 +195,8 @@ def run_ollama_aipp(prompt: str, model: str = "llama3.2:latest") -> str:
     response = requests.post(url, json={
         "model": model,
         "prompt": prompt,
-        "stream": False
+        "stream": False,
+        "options": {"temperature": _temperature},
     }, timeout=20)
     if response.ok:
         return response.json().get("response", "")
@@ -207,7 +213,7 @@ def run_openai_aipp(prompt: str, model: str = "gpt-3.5-turbo", base_url: str = N
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.7
+        "temperature": _temperature
     }
     response = _cloud_post(url, headers=headers, data=json.dumps(payload), timeout=20)
     if response.ok:
@@ -226,6 +232,7 @@ def run_anthropic_aipp(prompt: str, model: str = "claude-3-opus-20240229") -> st
     payload = {
         "model": model,
         "max_tokens": 1024,
+        "temperature": _temperature,
         "messages": [{"role": "user", "content": prompt}]
     }
     response = _cloud_post(url, headers=headers, data=json.dumps(payload), timeout=20)
@@ -244,7 +251,7 @@ def run_xai_aipp(prompt: str, model: str = "grok-3") -> str:
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.7
+        "temperature": _temperature
     }
     response = _cloud_post(url, headers=headers, data=json.dumps(payload), timeout=20)
     if response.ok:
@@ -269,7 +276,7 @@ def run_openrouter_aipp(prompt: str, model: str = "openai/gpt-4o-mini") -> str:
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.7
+        "temperature": _temperature
     }
     response = _cloud_post(url, headers=headers, data=json.dumps(payload), timeout=20)
     if response.ok:
@@ -299,7 +306,7 @@ def run_llamacpp_server_aipp(prompt: str, model: str = "gemma-3-270m") -> str:
         "messages": [{"role": "user", "content": prompt}],
         "stream": False,
         "max_tokens": 512,
-        "temperature": 0.7
+        "temperature": _temperature
     }, timeout=timeout)
     
     if response.ok:

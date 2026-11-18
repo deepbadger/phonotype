@@ -88,3 +88,28 @@ def test_check_connection_reports_route(monkeypatch):
     ok, msg = A.check_connection(cfg)
     assert not ok and "refused" in msg
     assert A.check_connection(cfg, "ollama")[0] is False
+
+
+def test_temperature_comes_from_config(monkeypatch):
+    import json
+    _, calls = _run(monkeypatch, "openai", "")
+    assert json.loads(calls[0][1]["data"])["temperature"] == 0.2
+    _, calls = _run(monkeypatch, "openai", "", aipp_temperature=0.6)
+    assert json.loads(calls[0][1]["data"])["temperature"] == 0.6
+
+
+def test_default_prompts_and_legacy_migration():
+    import yaml
+    from pathlib import Path
+    import voxd.core.config as C
+    shipped = yaml.safe_load((Path(C.__file__).parent.parent / "defaults" / "default_config.yaml").read_text())
+    assert shipped["aipp_prompts"] == C.DEFAULT_CONFIG["aipp_prompts"]
+    assert shipped["aipp_temperature"] == C.DEFAULT_CONFIG["aipp_temperature"] == 0.2
+    assert C.DEFAULT_CONFIG["aipp_prompts"]["default"].endswith("---")
+
+    cfg = C.get_config()
+    cfg.data["aipp_prompts"] = dict(C.LEGACY_PROMPTS, prompt2="my own prompt", prompt3="")
+    cfg._validate_aipp_config()
+    assert cfg.data["aipp_prompts"]["default"] == C.PROMPT_CLEAN_REQUEST      # untouched old default → new
+    assert cfg.data["aipp_prompts"]["prompt1"] == C.PROMPT_TASK_STATEMENT
+    assert cfg.data["aipp_prompts"]["prompt2"] == "my own prompt"             # edited → kept

@@ -70,6 +70,24 @@ def _tilde(path) -> str:
     return "~" + p[len(home):] if p.startswith(home) else p
 
 
+def prompt_summary(text: str, limit: int = 38) -> str:
+    """What a prompt does, in a few words: the name of a shipped prompt, else its first words."""
+    from voxd.core import config as C
+    names = {C.PROMPT_CLEAN_REQUEST: "clean up the request",
+             C.PROMPT_TASK_STATEMENT: "task statement",
+             C.PROMPT_CODING_INSTRUCTION: "instruction for a coding agent"}
+    text = str(text or "")
+    if text in names:
+        return names[text]
+    flat = " ".join(text.split())
+    return flat if len(flat) <= limit else flat[:limit - 1].rstrip() + "…"
+
+
+def prompt_label(key: str, text: str) -> str:
+    summary = prompt_summary(text)
+    return f"{prompt_title(key)}: {summary}" if summary else f"{prompt_title(key)} (empty)"
+
+
 CONTROL_WIDTH = 300  # combos / spin boxes / line edits in a row's right column
 
 
@@ -585,13 +603,16 @@ class AippPage(SettingsPage):
         self.model.lineEdit().editingFinished.connect(self._on_model)
         self.row(g, "Model", self.model,
                  "Pick one from the list, or type the provider's model id and press Enter to add it.")
+        self.dspin(g, "aipp_temperature", "Temperature",
+                   "0 to 1. Low values rewrite faithfully; higher ones rephrase more freely.", 0, 1, 0.1)
 
         g = self.group("Prompt")
         self.prompt = self.choice(
             g, "aipp_active_prompt", "Active prompt",
             "The instruction sent to the model together with every transcript. "
             "Four slots are kept so you can switch between tasks.",
-            [(prompt_title(k), k) for k in PROMPT_SLOTS], default="default")
+            lambda cur: [(prompt_label(k, (self.cfg.data.get("aipp_prompts") or {}).get(k, "")), k)
+                         for k in PROMPT_SLOTS], default="default")
         self.prompt.currentIndexChanged.connect(lambda _=0: self._show_prompt())
 
         self.prompt_text = QPlainTextEdit()
@@ -744,6 +765,9 @@ class AippPage(SettingsPage):
             return
         prompts[self._prompt_key] = text
         self.cfg.save()
+        i = self.prompt.findData(self._prompt_key)
+        if i >= 0:
+            self.prompt.setItemText(i, prompt_label(self._prompt_key, text))
         self.changed.emit()
 
     def reset_prompt(self):
