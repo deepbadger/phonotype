@@ -102,9 +102,6 @@ class CoreProcessThread(QThread):
         # delete it) when save_recordings is on — same behaviour as the CLI.
         preserve = bool(getattr(self.cfg, "data", {}).get("save_recordings", False))
 
-        # Ensure whisper-cli exists – attempt auto-build when missing
-        from phonotype.utils.whisper_auto import ensure_whisper_cli  # local import to avoid GUI deps in headless tests
-
         try:
             transcriber = WhisperTranscriber(
                 model_path=self.cfg.whisper_model_path,
@@ -113,25 +110,13 @@ class CoreProcessThread(QThread):
                 delete_input=not preserve,
             )
         except FileNotFoundError as e:
-            # Building whisper-cli can't help a missing parakeet-cli/model.
-            if str(self.cfg.data.get("asr_engine", "whisper")).strip().lower() == "parakeet":
-                from phonotype.utils.libw import verr
-                verr(f"[app_core] {e}")
-                self.status_changed.emit("No model")
-                self.finished.emit("")
-                return
-            # Try to build on the fly (GUI prompt)
-            if ensure_whisper_cli("gui") is None:
-                # User declined or build failed – abort gracefully
-                self.status_changed.emit("Phonotype")
-                self.finished.emit("")
-                return
-            transcriber = WhisperTranscriber(
-                model_path=self.cfg.whisper_model_path,
-                binary_path=self.cfg.whisper_binary,
-                language=getattr(self.cfg, "language", "en"),
-                delete_input=not preserve,
-            )
+            # A missing model or binary: nothing to do here but say so
+            # (Settings → Models downloads a model, ./setup.sh builds the binaries).
+            from phonotype.utils.libw import verr
+            verr(f"[app_core] {e}")
+            self.status_changed.emit("No model")
+            self.finished.emit("")
+            return
         typer = SimulatedTyper(delay=self.cfg.typing_delay, start_delay=self.cfg.typing_start_delay, cfg=self.cfg)
         clipboard = ClipboardManager()
 

@@ -298,7 +298,7 @@ def main():
     parser.add_argument(
         "--setup",
         action="store_true",
-        help="Run per-user setup (models, ydotool user service, desktop launchers) and exit",
+        help="Create the config and launcher, report what is missing, and exit",
     )
     parser.add_argument(
         "--setup-verbose",
@@ -414,32 +414,31 @@ def main():
     if args.diagnose:
         print(f"[Diagnose] Current mode: {mode}")
         
-        # Check ydotool daemon status on Wayland
+        # ydotool daemon on Wayland (checked by process, so any init system works)
         if os.environ.get("XDG_SESSION_TYPE") == "wayland":
             if shutil.which("ydotool"):
                 try:
-                    result = subprocess.run(
-                        ["systemctl", "--user", "is-active", "ydotoold.service"],
-                        capture_output=True, text=True, timeout=5
-                    )
-                    if result.returncode == 0:
+                    running = subprocess.run(["pgrep", "-x", "ydotoold"],
+                                             capture_output=True, timeout=3).returncode == 0
+                    if running:
                         print("[Diagnose] ydotool daemon: ✅ running")
                     else:
-                        # Check if daemon is running manually
-                        pgrep_result = subprocess.run(
-                            ["pgrep", "-x", "ydotoold"],
-                            capture_output=True, timeout=3
-                        )
-                        if pgrep_result.returncode == 0:
-                            print("[Diagnose] ydotool daemon: ⚠️ running manually (not via systemd)")
-                        else:
-                            print(f"[Diagnose] ydotool daemon: ❌ {result.stdout.strip()}")
-                            print("[Diagnose] → Fix: systemctl --user start ydotoold.service")
+                        print("[Diagnose] ydotool daemon: ❌ not running")
+                        print("[Diagnose] → Fix: rc-service --user phonotype-ydotoold start "
+                              "(systemd: systemctl --user start ydotoold.service)")
                 except Exception:
                     print("[Diagnose] ydotool daemon: ❌ cannot check status")
             else:
                 print("[Diagnose] ydotool: ❌ not installed")
-        
+
+        # What is missing to work at all (binaries, model, typing and clipboard tools)
+        try:
+            from phonotype.utils.setup_user import readiness_report
+            for ok, message in readiness_report(cfg):
+                print(f"[Diagnose] {'✅' if ok else '❌'} {message}")
+        except Exception as e:
+            print(f"[Diagnose] readiness check failed: {e}")
+
         # Audio device diagnostics
         try:
             import sounddevice as sd
@@ -463,12 +462,8 @@ def main():
                 has_pulse = any('pulse' in n for n in names)
                 if not has_pulse:
                     print("[Diagnose] Hint: No 'pulse' device detected.")
-                    if shutil.which('apt'):
-                        print("  Debian/Ubuntu: sudo apt install alsa-plugins pavucontrol (ensure pulseaudio or pipewire-pulse active)")
-                    elif shutil.which('dnf') or shutil.which('dnf5') or shutil.which('zypper'):
-                        print("  Fedora/openSUSE: sudo dnf install alsa-plugins-pulseaudio pavucontrol (ensure pipewire-pulseaudio active)")
-                    elif shutil.which('pacman'):
-                        print("  Arch: sudo pacman -S alsa-plugins pipewire-pulse pavucontrol")
+                    print("  Install the ALSA plugin of your sound server (PipeWire: media-video/pipewire[sound-server], "
+                          "media-plugins/alsa-plugins[pulseaudio]).")
             except Exception:
                 pass
         except Exception:
@@ -533,7 +528,7 @@ def main():
                     print("[Diagnose] → whisper_gpu_enabled is true but this binary has no GPU "
                           "support, so transcription runs on CPU regardless.")
                     print("[Diagnose] → To enable GPU: rebuild whisper.cpp with "
-                          "'./setup.sh --gpu' (CUDA/Vulkan), then reboot.")
+                          "'./setup.sh --gpu' (CUDA/Vulkan).")
             else:
                 print(f"[Diagnose] whisper-cli build: ❓ could not determine ({cap['detail']})")
         except FileNotFoundError:

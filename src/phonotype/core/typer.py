@@ -68,7 +68,7 @@ class SimulatedTyper:
                 print("[typer] ✅ ydotool daemon started successfully")
             else:
                 print("[typer] ⚠️ ydotool daemon auto-start failed - typing may be unreliable")
-                print("[typer] → Manual fix: 'systemctl --user start ydotoold.service' or re-run setup.sh")
+                print("[typer] → Manual fix: 'systemctl --user start ydotoold.service' or 'rc-service --user phonotype-ydotoold start'")
         
         verbo(f"[typer] Typing {'enabled' if self.enabled else 'disabled'} (backend: {self.backend}, tool: {self.tool})")
         

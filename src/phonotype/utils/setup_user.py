@@ -1,15 +1,17 @@
+"""Per-user setup (`phonotype --setup`): config, launcher, and a readiness report.
+
+It changes nothing outside the user's own config and launcher files: no sudo,
+no downloads, no edits to shell profiles or services. What is missing is
+reported with the command that fixes it.
+"""
 from __future__ import annotations
 
 import os
 import shutil
 import subprocess
 from pathlib import Path
-import sys
-import threading
-import time
 
-from phonotype.core.config import AppConfig, CONFIG_PATH
-from phonotype.paths import DATA_DIR
+from phonotype.core.config import AppConfig
 
 
 def _ensure_dir(p: Path) -> None:
@@ -17,326 +19,6 @@ def _ensure_dir(p: Path) -> None:
         p.mkdir(parents=True, exist_ok=True)
     except Exception:
         pass
-
-
-def _download_with_progress(url: str, dest: Path, label: str, timeout: int = 60, retries: int = 3) -> bool:
-    """Download URL to dest with a simple progress bar. Returns True on success."""
-    try:
-        import requests  # type: ignore
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        print(f"[setup] {label}: {dest}")
-        attempt = 0
-        while attempt < retries:
-            attempt += 1
-            try:
-                with requests.get(url, stream=True, timeout=timeout) as r:  # type: ignore
-                    r.raise_for_status()
-                    total = int(r.headers.get("Content-Length", 0))
-                    downloaded = 0
-                    chunk = 1024 * 1024
-                    tmp = dest.with_suffix(dest.suffix + ".tmp")
-                    with open(tmp, "wb") as f:
-                        for part in r.iter_content(chunk_size=chunk):
-                            if part:
-                                f.write(part)
-                                downloaded += len(part)
-                                if total > 0 and sys.stdout.isatty():
-                                    pct = downloaded * 100 // total
-                                    bar_len = 30
-                                    filled = int(bar_len * downloaded / total)
-                                    bar = "#" * filled + "-" * (bar_len - filled)
-                                    sys.stdout.write(f"\r[setup] downloading [{bar}] {pct}%")
-                                    sys.stdout.flush()
-                        if total > 0 and sys.stdout.isatty():
-                            sys.stdout.write("\n")
-                    tmp.replace(dest)
-                break
-            except Exception as e:
-                if attempt >= retries:
-                    raise
-                print(f"[setup] {label}: retrying ({attempt}/{retries})…", flush=True)
-        print(f"[setup] {label}: done")
-        return True
-    except Exception as e:
-        print(f"[setup] {label}: failed ({e})")
-        return False
-
-
-def _download_default_model() -> None:
-    model_dir = DATA_DIR / "models"
-    _ensure_dir(model_dir)
-    model_file = model_dir / "ggml-base.en.bin"
-    if model_file.exists():
-        return
-    url = (
-        "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin"
-    )
-    try:
-        _download_with_progress(
-            url,
-            model_file,
-            label="Whisper base model",
-            timeout=60,
-        )
-    except Exception as e:
-        print(f"[setup] Whisper model download failed ({e}).", flush=True)
-
-
-def _ensure_input_group_membership() -> None:
-    """Ensure the current user is in 'input' group (required for /dev/uinput)."""
-    try:
-        import grp, getpass
-        user = os.environ.get("USER") or getpass.getuser()
-        # Check membership
-        in_group = False
-        try:
-            grp_info = grp.getgrnam("input")
-            in_group = user in grp_info.gr_mem
-        except KeyError:
-            # Group may not exist on some systems
-            return
-        if not in_group:
-            # Try to add via sudo; ignore failures (user will be prompted)
-            subprocess.run(["sudo", "usermod", "-aG", "input", user], check=False)
-            try:
-                print("[setup] Added user to 'input' group (you must log out and back in to take effect).")
-            except Exception:
-                pass
-    except Exception:
-        pass
-
-
-def _setup_ydotool_user_service() -> None:
-    """Ensure ydotoold user service is present and running.
-
-    Prefer the packaged unit at /usr/lib/systemd/user/ydotoold.service.
-    Fallback to a per-user unit only if the packaged unit is absent.
-    Always ensure the client is reachable on PATH if we manage prebuilts.
-    """
-    # Ensure permissions for /dev/uinput and socket env
-    _ensure_input_group_membership()
-    socket_line = 'export YDOTOOL_SOCKET="$HOME/.ydotool_socket"\n'
-    for rc in (Path.home() / ".bashrc", Path.home() / ".zshrc"):
-        try:
-            if rc.exists():
-                txt = rc.read_text()
-                if "YDOTOOL_SOCKET" not in txt:
-                    with open(rc, "a") as f:
-                        f.write("\n" + socket_line)
-        except Exception:
-            pass
-    os.environ.setdefault("YDOTOOL_SOCKET", str(Path.home() / ".ydotool_socket"))
-
-    pkg_unit = Path("/usr/lib/systemd/user/ydotoold.service")
-    user_systemd = Path.home() / ".config/systemd/user"
-    _ensure_dir(user_systemd)
-
-    if not pkg_unit.exists():
-        # Need a binary first (system or prebuilt)
-        yd = shutil.which("ydotoold")
-        if not yd:
-            yd = _ensure_ydotool_prebuilt() or ""
-            if yd:
-                try:
-                    # Put client on PATH for runtime
-                    bin_dir = Path.home() / ".local/share/phonotype/bin"
-                    local_bin = Path.home() / ".local/bin"
-                    _ensure_dir(local_bin)
-                    if (bin_dir / "ydotool").exists():
-                        try:
-                            (local_bin / "ydotool").unlink(missing_ok=True)  # type: ignore[attr-defined]
-                        except Exception:
-                            try:
-                                (local_bin / "ydotool").unlink()
-                            except Exception:
-                                pass
-                        try:
-                            (local_bin / "ydotool").symlink_to(bin_dir / "ydotool")
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-        if not yd:
-            print("[setup] ydotoold not found and prebuilt fetch failed", flush=True)
-            return
-
-        # Create per-user unit
-        svc = user_systemd / "ydotoold.service"
-        try:
-            svc.write_text(
-                (
-                    "[Unit]\n"
-                    "Description=ydotool user daemon\n"
-                    "After=default.target\n\n"
-                    "[Service]\n"
-                    f"ExecStart={yd} --socket-path=%h/.ydotool_socket --socket-own=%U:%G\n"
-                    "Restart=on-failure\n"
-                    "RestartSec=1s\n\n"
-                    "[Install]\n"
-                    "WantedBy=default.target\n"
-                )
-            )
-        except Exception:
-            return
-
-    # Enable and start with retries; fallback to sg input
-    try:
-        subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
-        subprocess.run(["systemctl", "--user", "enable", "ydotoold.service"], check=False)
-        started = False
-        for _ in range(3):
-            subprocess.run(["systemctl", "--user", "start", "ydotoold.service"], check=False)
-            time.sleep(1.0)
-            r = subprocess.run(["systemctl", "--user", "is-active", "ydotoold.service"], check=False)
-            if r.returncode == 0:
-                started = True
-                break
-        if not started and shutil.which("sg"):
-            uid, gid = os.getuid(), os.getgid()
-            ydbin = shutil.which("ydotoold") or str(Path.home() / ".local/share/phonotype/bin/ydotoold")
-            cmd = ["sg", "input", "-c", f"{ydbin} --socket-path='$HOME/.ydotool_socket' --socket-own={uid}:{gid} &"]
-            subprocess.run(cmd, check=False)
-        if not started:
-            print("[setup] ydotoold may require a logout/login after joining 'input' group.", flush=True)
-    except Exception:
-        pass
-
-
-def _ensure_ydotool_prebuilt() -> str | None:
-    """Download ydotool/ydotoold prebuilt into ~/.local/share/phonotype/bin if missing.
-    Returns path to ydotoold or None.
-    """
-    try:
-        which_d = shutil.which("ydotoold")
-        if which_d:
-            return which_d
-        bin_dir = Path.home() / ".local/share/phonotype/bin"
-        bin_dir.mkdir(parents=True, exist_ok=True)
-        ydbin = bin_dir / "ydotoold"
-        ycbin = bin_dir / "ydotool"
-        if ydbin.exists() and os.access(ydbin, os.X_OK):
-            return str(ydbin)
-        # Determine asset name (no CPU feature variants)
-        import platform, tempfile, tarfile, requests  # type: ignore
-        arch = platform.machine().lower()
-        if arch in ("x86_64", "amd64"):
-            arch = "amd64"
-        elif arch in ("aarch64", "arm64"):
-            arch = "arm64"
-        else:
-            return None
-        # Download daemon and client archives separately
-        d_only = f"ydotoold_linux_{arch}.tar.gz"
-        c_only = f"ydotool_linux_{arch}.tar.gz"
-        repo = os.environ.get("PHONOTYPE_BIN_REPO", "jakovius/voxd-prebuilts")
-        tag = os.environ.get("PHONOTYPE_BIN_TAG", None)
-        with tempfile.TemporaryDirectory() as td:
-            url_d = _gh_release_asset_url(repo, d_only, tag)
-            url_c = _gh_release_asset_url(repo, c_only, tag)
-            if url_d:
-                tar_d = Path(td) / d_only
-                if _download_with_progress(url_d, tar_d, label="ydotoold archive", timeout=60):
-                    with tarfile.open(tar_d, "r:gz") as tf:
-                        tf.extractall(bin_dir)
-            if url_c:
-                tar_c = Path(td) / c_only
-                if _download_with_progress(url_c, tar_c, label="ydotool archive", timeout=60):
-                    with tarfile.open(tar_c, "r:gz") as tf:
-                        tf.extractall(bin_dir)
-        try:
-            ydbin.chmod(0o755)
-            ycbin.chmod(0o755)
-        except Exception:
-            pass
-        # Place client on PATH for app usage
-        try:
-            local_bin = Path.home() / ".local/bin"
-            _ensure_dir(local_bin)
-            if ycbin.exists():
-                try:
-                    (local_bin / "ydotool").unlink(missing_ok=True)  # type: ignore[attr-defined]
-                except Exception:
-                    try:
-                        (local_bin / "ydotool").unlink()
-                    except Exception:
-                        pass
-                try:
-                    (local_bin / "ydotool").symlink_to(ycbin)
-                except Exception:
-                    pass
-            # Optionally expose daemon on PATH for manual testing
-            if ydbin.exists():
-                try:
-                    (local_bin / "ydotoold").unlink(missing_ok=True)  # type: ignore[attr-defined]
-                except Exception:
-                    try:
-                        (local_bin / "ydotoold").unlink()
-                    except Exception:
-                        pass
-                try:
-                    (local_bin / "ydotoold").symlink_to(ydbin)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        if ydbin.exists():
-            return str(ydbin)
-    except Exception:
-        return None
-    return None
-
-
-def _detect_cpu_variant() -> tuple[str, str]:
-    """Return (arch, variant) for prebuilt selection.
-    arch: amd64|arm64; variant: avx2|sse42|neon|none
-    """
-    try:
-        import platform
-        machine = platform.machine().lower()
-    except Exception:
-        machine = ""
-    arch = ""; variant = "none"
-    if machine in ("x86_64", "amd64"):
-        arch = "amd64"
-        # Try lscpu first
-        try:
-            out = subprocess.run(["lscpu"], capture_output=True, text=True, timeout=2)
-            txt = (out.stdout or "") + (out.stderr or "")
-        except Exception:
-            try:
-                txt = (Path("/proc/cpuinfo").read_text())
-            except Exception:
-                txt = ""
-        t = txt.lower()
-        if "avx2" in t:
-            variant = "avx2"
-        elif "sse4_2" in t or "sse4.2" in t:
-            variant = "sse42"
-        else:
-            variant = "none"
-    elif machine in ("aarch64", "arm64"):
-        arch = "arm64"
-        variant = "neon"
-    else:
-        arch = machine or "unknown"
-        variant = "none"
-    return arch, variant
-
-
-def _gh_release_asset_url(repo: str, asset_name: str, tag: str | None = None) -> str:
-    api = f"https://api.github.com/repos/{repo}/releases/{'tags/' + tag if tag else 'latest'}"
-    try:
-        import requests  # type: ignore
-        r = requests.get(api, timeout=15)
-        r.raise_for_status()
-        data = r.json()
-        assets = data.get("assets", [])
-        for a in assets:
-            if a.get("name") == asset_name and a.get("browser_download_url"):
-                return a["browser_download_url"]
-    except Exception:
-        pass
-    return ""
 
 
 def _install_desktop_launchers() -> None:
@@ -391,46 +73,65 @@ def _install_desktop_launchers() -> None:
         pass
 
 
-def run_user_setup(verbose: bool = False) -> None:
-    # Create config if needed and load
-    cfg = AppConfig()
-    # Download default whisper model
-    _download_default_model()
-    # ydotool user service (ensure daemon exists and service is enabled)
-    if verbose:
-      try:
-        print("[setup:v] ydotool on PATH:", shutil.which("ydotool"))
-        print("[setup:v] ydotoold on PATH:", shutil.which("ydotoold"))
-        bin_dir = Path.home() / ".local/share/phonotype/bin"
-        print("[setup:v] phonotype-managed ydotoold:", (bin_dir / "ydotoold"))
-      except Exception:
-        pass
-    _setup_ydotool_user_service()
-    if verbose:
-      try:
-        pkg_unit = Path("/usr/lib/systemd/user/ydotoold.service")
-        user_unit = Path.home() / ".config/systemd/user/ydotoold.service"
-        print("[setup:v] packaged unit present:", pkg_unit.exists())
-        print("[setup:v] user unit path:", str(user_unit))
-        subprocess.run(["systemctl", "--user", "--no-pager", "status", "ydotoold.service"], check=False)
-        # Health checks
-        yc = shutil.which("ydotool")
-        if yc:
-          print("[setup:v] ydotool debug (socket):")
-          subprocess.run([yc, "debug"], check=False)
-          # No-op key test (quick verification)
-          print("[setup:v] ydotool key test (1:0)…")
-          try:
-            r = subprocess.run([yc, "key", "1:0"], timeout=3, check=False)
-            print("[setup:v] ydotool key test:", "OK" if r.returncode == 0 else f"rc={r.returncode}")
-          except Exception as _e:
-            print("[setup:v] ydotool key test: error")
-      except Exception:
-        pass
-    # Install desktop entries and icons
-    _install_desktop_launchers()
-    # Ensure whisper paths are resolved (AppConfig does this on save)
+def _in_input_group() -> bool | None:
+    """True/False, or None when there is no 'input' group."""
     try:
-        cfg.save()
+        import grp
+        gid = grp.getgrnam("input").gr_gid
+    except KeyError:
+        return None
+    return gid in os.getgroups()
+
+
+def readiness_report(cfg) -> list[tuple[bool, str]]:
+    """(ok, message) lines describing what Phonotype needs to work."""
+    from phonotype import models as mdl
+    from phonotype import paths
+
+    lines: list[tuple[bool, str]] = []
+
+    def binary(name: str, find, needed: bool):
+        try:
+            lines.append((True, f"{name}: {find()}"))
+        except FileNotFoundError:
+            lines.append((not needed, f"{name}: not found — build it with ./setup.sh from the repository"))
+
+    engine = str(cfg.data.get("asr_engine", "whisper")).lower()
+    binary("whisper-cli", paths.whisper_cli, engine == "whisper")
+    binary("parakeet-cli", paths.find_parakeet_cli, engine == "parakeet")
+
+    installed = mdl.installed_models()
+    if installed:
+        lines.append((True, f"speech models: {len(installed)} installed"))
+    else:
+        lines.append((False, "speech models: none — download one in Settings → Models "
+                             "or with 'phonotype-model install <key>'"))
+
+    if os.environ.get("XDG_SESSION_TYPE", "").startswith("wayland"):
+        ok = bool(shutil.which("ydotool") and shutil.which("ydotoold"))
+        lines.append((ok, "ydotool: installed" if ok else "ydotool: not found — install x11-misc/ydotool"))
+        member = _in_input_group()
+        if member is False:
+            lines.append((False, "group 'input': you are not a member — run "
+                                 "'gpasswd -a $USER input' as root and log in again"))
+        elif member:
+            lines.append((True, "group 'input': member"))
+    else:
+        ok = bool(shutil.which("xdotool"))
+        lines.append((ok, "xdotool: installed" if ok else "xdotool: not found — install x11-misc/xdotool"))
+
+    clip = next((t for t in ("wl-copy", "xclip", "xsel") if shutil.which(t)), None)
+    lines.append((bool(clip), f"clipboard tool: {clip}" if clip else
+                  "clipboard tool: none — install gui-apps/wl-clipboard or x11-misc/xclip"))
+    return lines
+
+
+def run_user_setup(verbose: bool = False) -> None:
+    cfg = AppConfig()            # creates the config (and imports VOXD's on first run)
+    _install_desktop_launchers()
+    try:
+        cfg.save()               # persist resolved binary/model paths
     except Exception:
         pass
+    for ok, message in readiness_report(cfg):
+        print(f"[setup] {'ok ' if ok else '!! '} {message}")

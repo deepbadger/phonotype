@@ -152,8 +152,8 @@ Environment overrides for development: `PHONOTYPE_WC_BIN`, `PHONOTYPE_PARAKEET_B
 ```bash
 phonotype --tray                 # the application
 phonotype --trigger-record       # start/stop recording in the running instance (hotkey)
-phonotype --diagnose             # mode, audio devices, ydotool, GPU build
-phonotype --setup                # per-user setup: default model, launchers
+phonotype --diagnose             # binaries, models, ydotool, audio devices, GPU build
+phonotype --setup                # create config and launcher, report what is missing
 phonotype --version
 phonotype                        # interactive CLI ('h' for commands); --rh, --transcribe, --aipp …
 ```

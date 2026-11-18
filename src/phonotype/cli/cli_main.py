@@ -210,7 +210,7 @@ def main():
     args = parser.parse_args()
 
     cfg = cast(Any, AppConfig())
-    # Ensure whisper-cli exists (auto-build if missing)
+    # Say so early if whisper-cli is missing
     ensure_whisper_cli("cli")
     logger = SessionLogger(cfg.log_enabled, cfg.log_location)
 
