@@ -125,7 +125,7 @@ def stub_pyperclip(monkeypatch):
 @pytest.fixture
 def fake_whisper_run(monkeypatch, tmp_path):
     """Patch whisper subprocess.run to simulate success and create expected .txt output."""
-    def _run(cmd, capture_output=True, text=True):
+    def _run(cmd, capture_output=True, text=True, env=None, **kwargs):
         # Find output prefix from '-of'
         if "-of" in cmd:
             of_idx = cmd.index("-of")
@@ -143,4 +143,16 @@ def fake_whisper_run(monkeypatch, tmp_path):
     monkeypatch.setattr("voxd.core.transcriber.subprocess.run", _run)
     return _run
 
+
+_QAPP = None  # keep the QApplication alive: an unreferenced one is garbage-collected
+
+
+@pytest.fixture
+def qapp(isolate_xdg_dirs):
+    """A live QApplication (offscreen) for tests that build Qt widgets."""
+    global _QAPP
+    pytest.importorskip("PyQt6")
+    from PyQt6.QtWidgets import QApplication
+    _QAPP = QApplication.instance() or _QAPP or QApplication(sys.argv)
+    return _QAPP
 
