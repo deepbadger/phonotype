@@ -7,8 +7,9 @@
 #   3. pushes the current branch to the remote,
 #   4. creates an annotated tag v<version> and pushes it.
 #
-# Pushing the tag triggers .github/workflows/release-packages.yml, which builds
-# the deb/rpm/archlinux packages + Python sdist and publishes a GitHub Release.
+# Pushing the tag triggers .github/workflows/release.yml, which publishes a
+# GitHub Release (the Gentoo ebuild installs from the tag's source archive) and
+# starts the gigachat wheels bundle for it.
 # A pre-release version (e.g. 1.5.0-rc1) is published as a GitHub *prerelease*.
 #
 # Usage:
@@ -130,23 +131,23 @@ fi
 # Push branch first so the tagged commit is reachable on the remote.
 run git push "$REMOTE" "$BRANCH"
 
-# Create + push the annotated tag → triggers the Release packages workflow.
+# Create + push the annotated tag → triggers the Release workflow.
 run git tag -a "$TAG" -m "$TAG_MSG"
 run git push "$REMOTE" "$TAG"
 
-echo "✅ Pushed $TAG. GitHub CI 'Release packages' will build & publish it."
+echo "✅ Pushed $TAG. GitHub CI 'Release' will build & publish it."
 
 if [[ "$WATCH" == 1 ]]; then
   if command -v gh >/dev/null 2>&1; then
     echo "⏳ Waiting for the workflow run to appear…"
     # Give GitHub a moment to register the workflow run for the new tag.
     sleep 5
-    RUN_ID="$(gh run list --workflow release-packages.yml --limit 1 \
+    RUN_ID="$(gh run list --workflow release.yml --limit 1 \
       --json databaseId --jq '.[0].databaseId' 2>/dev/null || true)"
     if [[ -n "${RUN_ID:-}" ]]; then
       gh run watch "$RUN_ID" --exit-status || true
     else
-      echo "  (could not locate the run; check: gh run list --workflow release-packages.yml)"
+      echo "  (could not locate the run; check: gh run list --workflow release.yml)"
     fi
   else
     echo "  --watch requested but 'gh' is not installed; skipping."
@@ -154,5 +155,5 @@ if [[ "$WATCH" == 1 ]]; then
 fi
 
 if command -v gh >/dev/null 2>&1; then
-  echo "ℹ View runs:  gh run list --workflow release-packages.yml"
+  echo "ℹ View runs:  gh run list --workflow release.yml"
 fi
