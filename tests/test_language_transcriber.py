@@ -21,14 +21,14 @@ def _stub_run_factory(calls_store):
 
 
 def test_transcriber_injects_default_en(monkeypatch, tmp_path):
-    from voxd.core.transcriber import WhisperTranscriber
+    from phonotype.core.transcriber import WhisperTranscriber
 
     audio = tmp_path / "a.wav"; audio.write_bytes(b"\x00\x00")
     model = tmp_path / "m.bin"; model.write_bytes(b"x")
     binary = tmp_path / "whisper-cli"; binary.write_text("#!/bin/sh\n"); binary.chmod(0o755)
 
     calls = []
-    monkeypatch.setattr("voxd.core.transcriber.subprocess.run", _stub_run_factory(calls))
+    monkeypatch.setattr("phonotype.core.transcriber.subprocess.run", _stub_run_factory(calls))
 
     t = WhisperTranscriber(str(model), str(binary), delete_input=True)
     text, _ = t.transcribe(str(audio))
@@ -40,14 +40,14 @@ def test_transcriber_injects_default_en(monkeypatch, tmp_path):
 
 
 def test_transcriber_accepts_auto_language(monkeypatch, tmp_path):
-    from voxd.core.transcriber import WhisperTranscriber
+    from phonotype.core.transcriber import WhisperTranscriber
 
     audio = tmp_path / "b.wav"; audio.write_bytes(b"\x00\x00")
     model = tmp_path / "m.bin"; model.write_bytes(b"x")
     binary = tmp_path / "whisper-cli"; binary.write_text("#!/bin/sh\n"); binary.chmod(0o755)
 
     calls = []
-    monkeypatch.setattr("voxd.core.transcriber.subprocess.run", _stub_run_factory(calls))
+    monkeypatch.setattr("phonotype.core.transcriber.subprocess.run", _stub_run_factory(calls))
 
     t = WhisperTranscriber(str(model), str(binary), delete_input=False, language="auto")
     text, _ = t.transcribe(str(audio))

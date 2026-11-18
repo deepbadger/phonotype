@@ -1,4 +1,4 @@
-"""asr_engine: parakeet — parakeet-cli via WhisperTranscriber, paths, voxd-model."""
+"""asr_engine: parakeet — parakeet-cli via WhisperTranscriber, paths, phonotype-model."""
 from pathlib import Path
 
 
@@ -16,12 +16,12 @@ def _capture(monkeypatch, fake_whisper_run):
         calls.append(list(cmd))
         return fake_whisper_run(cmd, *a, **kw)
 
-    monkeypatch.setattr("voxd.core.transcriber.subprocess.run", _run)
+    monkeypatch.setattr("phonotype.core.transcriber.subprocess.run", _run)
     return calls
 
 
 def test_parakeet_command_and_text(tmp_path, monkeypatch, fake_whisper_run):
-    from voxd.core.transcriber import WhisperTranscriber
+    from phonotype.core.transcriber import WhisperTranscriber
     audio, model, binary = _files(tmp_path)
     calls = _capture(monkeypatch, fake_whisper_run)
 
@@ -42,7 +42,7 @@ def test_parakeet_command_and_text(tmp_path, monkeypatch, fake_whisper_run):
 
 
 def test_parakeet_respects_gpu_disabled(tmp_path, monkeypatch, fake_whisper_run):
-    from voxd.core.transcriber import WhisperTranscriber
+    from phonotype.core.transcriber import WhisperTranscriber
     audio, model, binary = _files(tmp_path)
     calls = _capture(monkeypatch, fake_whisper_run)
 
@@ -54,7 +54,7 @@ def test_parakeet_respects_gpu_disabled(tmp_path, monkeypatch, fake_whisper_run)
 
 
 def test_engine_comes_from_config(tmp_path, monkeypatch):
-    import voxd.core.transcriber as T
+    import phonotype.core.transcriber as T
     _, model, binary = _files(tmp_path)
     monkeypatch.setattr(T, "_config_data", lambda: {
         "asr_engine": "parakeet",
@@ -68,10 +68,10 @@ def test_engine_comes_from_config(tmp_path, monkeypatch):
 
 
 def test_parakeet_autodetect_via_env(tmp_path, monkeypatch):
-    import voxd.core.transcriber as T
+    import phonotype.core.transcriber as T
     _, model, binary = _files(tmp_path)
-    monkeypatch.setenv("VOXD_PARAKEET_BIN", str(binary))
-    monkeypatch.setenv("VOXD_PARAKEET_MODEL_PATH", str(model))
+    monkeypatch.setenv("PHONOTYPE_PARAKEET_BIN", str(binary))
+    monkeypatch.setenv("PHONOTYPE_PARAKEET_MODEL_PATH", str(model))
     monkeypatch.setattr(T, "_config_data", lambda: {"asr_engine": "parakeet",
                                                     "parakeet_model_path": "",
                                                     "parakeet_binary": ""})
@@ -81,8 +81,8 @@ def test_parakeet_autodetect_via_env(tmp_path, monkeypatch):
 
 
 def test_find_parakeet_model_prefers_f16_in_data_dir(tmp_path, monkeypatch):
-    import voxd.paths as P
-    monkeypatch.delenv("VOXD_PARAKEET_MODEL_PATH", raising=False)
+    import phonotype.paths as P
+    monkeypatch.delenv("PHONOTYPE_PARAKEET_MODEL_PATH", raising=False)
     models = P.DATA_DIR / "models"
     models.mkdir(parents=True, exist_ok=True)
     (models / "ggml-parakeet-tdt-0.6b-v3-q8_0.bin").write_bytes(b"x")
@@ -91,14 +91,14 @@ def test_find_parakeet_model_prefers_f16_in_data_dir(tmp_path, monkeypatch):
 
 
 def test_unknown_engine_falls_back_to_whisper():
-    from voxd.core.transcriber import normalize_engine
+    from phonotype.core.transcriber import normalize_engine
     assert normalize_engine("Parakeet ") == "parakeet"
     assert normalize_engine("vosk") == "whisper"
     assert normalize_engine(None) == "whisper"
 
 
 def test_models_catalogue_names():
-    import voxd.models as M
+    import phonotype.models as M
     assert M._pretty_name("parakeet-tdt-0.6b-v3") == "ggml-parakeet-tdt-0.6b-v3-f16.bin"
     assert M._pretty_name("parakeet-tdt-0.6b-v3-q8_0") == "ggml-parakeet-tdt-0.6b-v3-q8_0.bin"
     assert M._pretty_name("tiny") == "ggml-tiny.bin"  # whisper names unchanged
@@ -117,7 +117,7 @@ class _DummyCfg:
 
 
 def test_use_parakeet_switches_engine(tmp_path, monkeypatch):
-    import voxd.models as M
+    import phonotype.models as M
     _, model, _ = _files(tmp_path)
     cfg = _DummyCfg()
     monkeypatch.setattr(M, "AppConfig", lambda: cfg)
@@ -130,7 +130,7 @@ def test_use_parakeet_switches_engine(tmp_path, monkeypatch):
 
 
 def test_use_whisper_switches_back(tmp_path, monkeypatch):
-    import voxd.models as M
+    import phonotype.models as M
     whisper_model = tmp_path / "ggml-tiny.bin"; whisper_model.write_bytes(b"x")
     cfg = _DummyCfg()
     cfg.data["asr_engine"] = "parakeet"

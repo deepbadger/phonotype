@@ -4,22 +4,22 @@ import pytest
 
 @pytest.fixture
 def win(qapp, monkeypatch, tmp_path):
-    import voxd.models as M
+    import phonotype.models as M
     cache = tmp_path / "cache"; cache.mkdir()
     monkeypatch.setattr(M, "CACHE_DIR", cache)
     monkeypatch.setattr(M, "REPO_MODELS", tmp_path / "repo")
-    monkeypatch.delenv("VOXD_PARAKEET_MODEL_PATH", raising=False)
+    monkeypatch.delenv("PHONOTYPE_PARAKEET_MODEL_PATH", raising=False)
     whisper = cache / "ggml-tiny.bin"; whisper.write_bytes(b"x")
     parakeet = cache / "ggml-parakeet-tdt-0.6b-v3-q8_0.bin"; parakeet.write_bytes(b"x")
 
-    from voxd.core.config import get_config
+    from phonotype.core.config import get_config
     cfg = get_config()
     cfg.data.update(asr_engine="whisper", whisper_model_path=str(whisper),
                     parakeet_model_path=str(parakeet), language="ru")
     saves = []
     monkeypatch.setattr(cfg, "save", lambda: saves.append(1))
 
-    from voxd.gui.settings_window import SettingsWindow
+    from phonotype.gui.settings_window import SettingsWindow
     w = SettingsWindow(cfg)
     w.show()
     return w, cfg, saves, whisper, parakeet
@@ -59,7 +59,7 @@ def test_engine_switch_applies_and_hides_whisper_rows(win):
 
 def test_missing_model_shows_warning(win, monkeypatch):
     w, cfg, _, _, parakeet = win
-    import voxd.paths as P
+    import phonotype.paths as P
 
     def _none():
         raise FileNotFoundError("no parakeet model")
@@ -112,7 +112,7 @@ def test_typing_and_audio_pages_apply(win):
 
 def test_every_page_key_is_a_known_config_key(win):
     """A typo in a bound key would silently create a junk config entry."""
-    from voxd.core.config import DEFAULT_CONFIG
+    from phonotype.core.config import DEFAULT_CONFIG
     w, cfg, *_ = win
     extra = set(cfg.data) - set(DEFAULT_CONFIG) - {"model_path"}
     assert not extra, extra
@@ -136,7 +136,7 @@ def test_aipp_model_selection_applies(win):
 
 
 def test_autostart_goes_through_the_cli_handler(win, monkeypatch):
-    import voxd.gui.settings_window as SW
+    import phonotype.gui.settings_window as SW
     w, cfg, *_ = win
     calls = []
 
@@ -157,7 +157,7 @@ def test_autostart_goes_through_the_cli_handler(win, monkeypatch):
 
 
 def test_prompt_editor_follows_slot_and_saves(win):
-    from voxd.core.config import DEFAULT_CONFIG
+    from phonotype.core.config import DEFAULT_CONFIG
     w, cfg, *_ = win
     page = w.aipp
     cfg.data["aipp_prompts"] = {"default": "d", "prompt1": "one", "prompt2": "", "prompt3": ""}
@@ -183,7 +183,7 @@ def test_prompt_editor_follows_slot_and_saves(win):
 
 def test_api_key_row_follows_provider_and_saves(win, monkeypatch):
     import os
-    from voxd.core import api_keys
+    from phonotype.core import api_keys
     w, cfg, *_ = win
     page = w.aipp
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
@@ -221,7 +221,7 @@ def test_api_key_row_follows_provider_and_saves(win, monkeypatch):
 
 def test_stored_key_overrides_and_restores_environment(monkeypatch):
     import os
-    from voxd.core import api_keys
+    from phonotype.core import api_keys
     monkeypatch.setattr(api_keys, "_original_env", {})
     monkeypatch.setenv("XAI_API_KEY", "shell")
     api_keys.save_key("XAI_API_KEY", "stored")
@@ -249,7 +249,7 @@ def test_typed_model_id_joins_the_list(win):
 
 
 def test_proxy_row_saves_validates_and_tests(win, monkeypatch):
-    import voxd.core.aipp as A
+    import phonotype.core.aipp as A
     w, cfg, *_ = win
     page = w.aipp
     monkeypatch.setattr(A, "socks_supported", lambda: True)

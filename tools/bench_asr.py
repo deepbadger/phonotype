@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Сравнение движков распознавания речи для voxd: скорость, ОЗУ, VRAM, качество.
+"""Сравнение движков распознавания речи для phonotype: скорость, ОЗУ, VRAM, качество.
 
 Движки:
-  whisper   whisper-cli из whisper.cpp (как в voxd сейчас)
+  whisper   whisper-cli из whisper.cpp (как в phonotype сейчас)
   parakeet  parakeet-cli из whisper.cpp (NVIDIA parakeet-tdt-0.6b-v3)
   gigaam    GigaAM-v3 через onnx-asr (отдельный venv, без PyTorch)
 
-Каждый файл распознаётся в отдельном процессе, как voxd делает сейчас при
+Каждый файл распознаётся в отдельном процессе, как phonotype делает сейчас при
 каждой диктовке. Для каждого запуска замеряются:
   wall   — полное время от запуска процесса до готового текста;
   load   — время до конца загрузки модели (по строке "system_info:" / "LOADED");
@@ -22,7 +22,7 @@
     VIRTUAL_ENV=~/.venvs/gigaam-bench uv pip install "onnx-asr[hub]" "onnxruntime-gpu[cuda,cudnn]"
 
 Пример:
-    python3 tools/bench_asr.py ~/.local/share/voxd/recordings \
+    python3 tools/bench_asr.py ~/.local/share/phonotype/recordings \
         --gigaam-python ~/.venvs/gigaam-bench/bin/python
 """
 from __future__ import annotations
@@ -452,7 +452,7 @@ def write_reports(outdir: Path, engines, samples, rows, a):
             _fmt(r["vram_max"], "d") + (" (Δ)" if r["vram_src"] == "delta" else ""),
             _fmt(r["wer"] and r["wer"] * 100, ".1f"), _fmt(r["cer"] and r["cer"] * 100, ".1f")]) + " |")
     md += ["", "wall, load, infer — медианы на файл. ×RT — во сколько раз быстрее реального времени: "
-           "«хол.» с загрузкой модели на каждый файл (как voxd сейчас), «тёпл.» — если модель "
+           "«хол.» с загрузкой модели на каждый файл (как phonotype сейчас), «тёпл.» — если модель "
            "держать в памяти. VRAM (Δ) — прирост общей занятости карты, а не память процесса.", ""]
     for s in samples:
         md += [f"## {s.src.name} ({s.duration:.1f} с)", ""]

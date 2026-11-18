@@ -1,5 +1,5 @@
 def test_get_final_text_disabled(monkeypatch):
-    from voxd.core.aipp import get_final_text
+    from phonotype.core.aipp import get_final_text
     class Cfg:
         def __init__(self):
             self.data = {"aipp_enabled": False}
@@ -8,7 +8,7 @@ def test_get_final_text_disabled(monkeypatch):
 
 
 def test_get_final_text_enabled_routes(monkeypatch):
-    from voxd.core import aipp
+    from phonotype.core import aipp
     class Cfg:
         def __init__(self):
             self.data = {
@@ -26,7 +26,7 @@ def test_get_final_text_enabled_routes(monkeypatch):
 
 
 def test_get_final_text_routes_openrouter(monkeypatch):
-    from voxd.core import aipp
+    from phonotype.core import aipp
     class Cfg:
         def __init__(self):
             self.data = {
@@ -51,7 +51,7 @@ def test_get_final_text_routes_openrouter(monkeypatch):
 
 
 def test_run_openrouter_aipp_sends_key_and_model(monkeypatch):
-    from voxd.core import aipp
+    from phonotype.core import aipp
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-secret")
 
     captured = {}
@@ -77,7 +77,7 @@ def test_run_openrouter_aipp_sends_key_and_model(monkeypatch):
 
 
 def test_get_final_text_routes_gigachat(monkeypatch):
-    from voxd.core import aipp
+    from phonotype.core import aipp
     class Cfg:
         def __init__(self):
             self.data = {
@@ -102,7 +102,7 @@ def test_get_final_text_routes_gigachat(monkeypatch):
 
 
 def test_get_final_text_routes_openai_compatible(monkeypatch):
-    from voxd.core import aipp
+    from phonotype.core import aipp
     class Cfg:
         def __init__(self):
             self.data = {
@@ -133,7 +133,7 @@ def test_get_final_text_routes_openai_compatible(monkeypatch):
 
 
 def test_get_final_text_routes_openai_compatible_missing_config(monkeypatch):
-    from voxd.core import aipp
+    from phonotype.core import aipp
     class Cfg:
         def __init__(self):
             self.data = {
@@ -153,7 +153,7 @@ def test_get_final_text_routes_openai_compatible_missing_config(monkeypatch):
 
 
 def test_run_gigachat_aipp_missing_creds(monkeypatch):
-    from voxd.core import aipp
+    from phonotype.core import aipp
     monkeypatch.delenv("GIGACHAT_CREDENTIALS", raising=False)
     import pytest
     with pytest.raises(RuntimeError, match="GIGACHAT_CREDENTIALS"):
@@ -161,7 +161,7 @@ def test_run_gigachat_aipp_missing_creds(monkeypatch):
 
 
 def test_run_gigachat_aipp_caches_client(monkeypatch):
-    from voxd.core import aipp
+    from phonotype.core import aipp
     monkeypatch.setenv("GIGACHAT_CREDENTIALS", "fake-creds")
     aipp._gigachat_clients.clear()
 

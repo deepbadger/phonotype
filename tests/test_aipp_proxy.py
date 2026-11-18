@@ -3,7 +3,7 @@ import pytest
 
 
 def test_normalize_proxy():
-    from voxd.core.aipp import normalize_proxy as n
+    from phonotype.core.aipp import normalize_proxy as n
     assert n("") == "" and n(None) == ""
     assert n("10.0.0.1:3128") == "http://10.0.0.1:3128"
     assert n("socks5://127.0.0.1:1080") == "socks5h://127.0.0.1:1080"      # DNS through the proxy
@@ -22,8 +22,8 @@ class _Resp:
 
 
 def _run(monkeypatch, provider, proxy, **extra):
-    import voxd.core.aipp as A
-    from voxd.core.config import get_config
+    import phonotype.core.aipp as A
+    from phonotype.core.config import get_config
     calls = []
     monkeypatch.setattr(A.requests, "post", lambda url, **kw: calls.append((url, kw)) or _Resp())
     monkeypatch.setattr(A, "socks_supported", lambda: True)
@@ -61,8 +61,8 @@ def test_bad_proxy_is_ignored_not_fatal(monkeypatch):
 
 
 def test_socks_without_pysocks_leaves_transcript_untouched(monkeypatch):
-    import voxd.core.aipp as A
-    from voxd.core.config import get_config
+    import phonotype.core.aipp as A
+    from phonotype.core.config import get_config
     monkeypatch.setattr(A, "socks_supported", lambda: False)
     monkeypatch.setattr(A.requests, "post", lambda *a, **k: pytest.fail("must not connect directly"))
     cfg = get_config()
@@ -71,8 +71,8 @@ def test_socks_without_pysocks_leaves_transcript_untouched(monkeypatch):
 
 
 def test_check_connection_reports_route(monkeypatch):
-    import voxd.core.aipp as A
-    from voxd.core.config import get_config
+    import phonotype.core.aipp as A
+    from phonotype.core.config import get_config
     seen = {}
     monkeypatch.setattr(A, "socks_supported", lambda: True)
     monkeypatch.setattr(A.requests, "get", lambda url, **kw: seen.update(url=url, **kw))
@@ -101,7 +101,7 @@ def test_temperature_comes_from_config(monkeypatch):
 def test_default_prompts_and_legacy_migration():
     import yaml
     from pathlib import Path
-    import voxd.core.config as C
+    import phonotype.core.config as C
     shipped = yaml.safe_load((Path(C.__file__).parent.parent / "defaults" / "default_config.yaml").read_text())
     assert shipped["aipp_prompts"] == C.DEFAULT_CONFIG["aipp_prompts"]
     assert shipped["aipp_temperature"] == C.DEFAULT_CONFIG["aipp_temperature"] == 0.2

@@ -2,7 +2,7 @@
 
 
 def test_short_model_name_and_elide():
-    from voxd.tray.tray_main import elide_middle, short_model_name
+    from phonotype.tray.tray_main import elide_middle, short_model_name
     assert short_model_name("ggml-large-v3-russian-q5_0.bin") == "large-v3-russian-q5_0"
     assert short_model_name("custom.bin") == "custom"
     assert elide_middle("abcdefghij", 5) == "ab…ij"
@@ -15,21 +15,21 @@ def _labels(menu):
 
 
 def test_menu_structure_follows_config(qapp, monkeypatch, tmp_path):
-    import voxd.models as M
+    import phonotype.models as M
     cache = tmp_path / "cache"; cache.mkdir()
     monkeypatch.setattr(M, "CACHE_DIR", cache)
     monkeypatch.setattr(M, "REPO_MODELS", tmp_path / "repo")
     whisper = cache / "ggml-large-v3-russian-q5_0.bin"; whisper.write_bytes(b"x")
     parakeet = cache / "ggml-parakeet-tdt-0.6b-v3-q8_0.bin"; parakeet.write_bytes(b"x")
 
-    from voxd.core.config import get_config
+    from phonotype.core.config import get_config
     cfg = get_config()
     monkeypatch.setattr(cfg, "save", lambda: None)
     cfg.data.update(asr_engine="whisper", whisper_model_path=str(whisper),
                     parakeet_model_path=str(parakeet), language="ru", aipp_enabled=False)
 
-    import voxd.tray.tray_main as T
-    tray = T.VoxdTrayApp()
+    import phonotype.tray.tray_main as T
+    tray = T.PhonotypeTrayApp()
     assert _labels(tray.menu) == [
         "Start Recording", "---",
         "Model: large-v3-russian-q5_0", "Language: Russian…", "AI Processing: Off", "---",
@@ -56,6 +56,6 @@ def test_menu_structure_follows_config(qapp, monkeypatch, tmp_path):
 
 
 def test_submenu_titles_leave_room_for_arrow(qapp):
-    from voxd.tray.tray_main import submenu_title
+    from phonotype.tray.tray_main import submenu_title
     assert submenu_title("Model: x").startswith("Model: x")
     assert submenu_title("Model: x").endswith("\u00a0" * 4)

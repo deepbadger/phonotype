@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Convert a HuggingFace Whisper checkpoint to whisper.cpp GGML and install it
-# into voxd's models dir.
+# into phonotype's models dir.
 #
 # Usage:
 #   ./add-hf-model.sh <hf-repo> <local-name> [--quantize q5_0|q8_0]
@@ -9,7 +9,7 @@
 #   ./add-hf-model.sh antony66/whisper-large-v3-russian large-v3-ru
 #   ./add-hf-model.sh antony66/whisper-large-v3-russian large-v3-ru --quantize q5_0
 #
-# Result: ~/.local/share/voxd/models/ggml-<local-name>.bin (and a -q5_0 variant
+# Result: ~/.local/share/phonotype/models/ggml-<local-name>.bin (and a -q5_0 variant
 # if --quantize is passed).
 #
 # Prereqs: git, git-lfs, python3 with torch+transformers (installed into .venv),
@@ -37,8 +37,8 @@ cd "$SCRIPT_DIR"
 
 VENV_DIR="$SCRIPT_DIR/.venv"
 WHISPER_CPP="$SCRIPT_DIR/whisper.cpp"
-MODELS_OUT="${XDG_DATA_HOME:-$HOME/.local/share}/voxd/models"
-WORK_DIR="$(mktemp -d -t voxd-hf-XXXX)"
+MODELS_OUT="${XDG_DATA_HOME:-$HOME/.local/share}/phonotype/models"
+WORK_DIR="$(mktemp -d -t phonotype-hf-XXXX)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
 # ── checks ───────────────────────────────────────────────────────────────────
@@ -85,6 +85,6 @@ if [[ -n "$QUANT" ]]; then
 fi
 
 echo
-echo "Activate via GUI Model Manager, OR edit ~/.config/voxd/config.yaml:"
+echo "Activate via GUI Model Manager, OR edit ~/.config/phonotype/config.yaml:"
 echo "  whisper_model_path: $DEST"
 echo "  language: ru   # this checkpoint is Russian-only"

@@ -42,15 +42,15 @@ class _Cfg:
 @pytest.mark.parametrize("save", [True, False])
 def test_core_thread_honours_save_recordings(monkeypatch, save):
     # imported here: conftest stubs sounddevice only once the test is running
-    import voxd.core.recorder as recorder_mod
-    import voxd.core.voxd_core as voxd_core
+    import phonotype.core.recorder as recorder_mod
+    import phonotype.core.app_core as app_core
 
     monkeypatch.setattr(recorder_mod, "AudioRecorder", _FakeRecorder)
-    monkeypatch.setattr(voxd_core, "WhisperTranscriber", _FakeTranscriber)
-    monkeypatch.setattr("voxd.core.typer.SimulatedTyper", lambda *a, **kw: object())
-    monkeypatch.setattr("voxd.core.clipboard.ClipboardManager", lambda *a, **kw: object())
+    monkeypatch.setattr(app_core, "WhisperTranscriber", _FakeTranscriber)
+    monkeypatch.setattr("phonotype.core.typer.SimulatedTyper", lambda *a, **kw: object())
+    monkeypatch.setattr("phonotype.core.clipboard.ClipboardManager", lambda *a, **kw: object())
 
-    t = voxd_core.CoreProcessThread(_Cfg(save), logger=None)
+    t = app_core.CoreProcessThread(_Cfg(save), logger=None)
     t.should_stop = True
     t.run()  # synchronously, no Qt event loop needed
 

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  VOXD – build helper for a source checkout
+#  Phonotype – build helper for a source checkout
 #
 #  Builds what the distro package does not ship:
 #    • whisper.cpp → whisper-cli and parakeet-cli (optionally with a GPU backend)
-#    • a Python venv with VOXD installed in editable mode (skip with --no-venv)
-#  and links the two binaries into ~/.local/bin so an installed VOXD finds them.
+#    • a Python venv with Phonotype installed in editable mode (skip with --no-venv)
+#  and links the two binaries into ~/.local/bin so an installed Phonotype finds them.
 #
 #  It installs no system packages. Supported platform: Gentoo (see README);
 #  elsewhere it should work as long as the tools below are present.
@@ -17,7 +17,7 @@
 #    ./setup.sh --gpu=vulkan    Vulkan
 #    ./setup.sh --no-venv       only build whisper.cpp
 #    ./setup.sh --rebuild       wipe whisper.cpp/build first
-#  The backend can also be given as VOXD_GPU=auto|cuda|vulkan|cpu.
+#  The backend can also be given as PHONOTYPE_GPU=auto|cuda|vulkan|cpu.
 # =============================================================================
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -26,21 +26,21 @@ msg()  { printf '==> %s\n' "$*"; }
 note() { printf '\033[1;33m==>\033[0m %s\n' "$*"; }
 die()  { printf '\033[0;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
-VOXD_GPU="${VOXD_GPU:-cpu}"
+PHONOTYPE_GPU="${PHONOTYPE_GPU:-cpu}"
 WITH_VENV=1
 REBUILD=0
 for arg in "$@"; do
   case "$arg" in
-    --gpu)          VOXD_GPU="auto" ;;
-    --gpu=*)        VOXD_GPU="${arg#--gpu=}" ;;
-    --cpu|--no-gpu) VOXD_GPU="cpu" ;;
+    --gpu)          PHONOTYPE_GPU="auto" ;;
+    --gpu=*)        PHONOTYPE_GPU="${arg#--gpu=}" ;;
+    --cpu|--no-gpu) PHONOTYPE_GPU="cpu" ;;
     --no-venv)      WITH_VENV=0 ;;
     --rebuild)      REBUILD=1 ;;
     -h|--help)      sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *)              die "unknown option: $arg (see --help)" ;;
   esac
 done
-VOXD_GPU="$(printf '%s' "$VOXD_GPU" | tr '[:upper:]' '[:lower:]')"
+PHONOTYPE_GPU="$(printf '%s' "$PHONOTYPE_GPU" | tr '[:upper:]' '[:lower:]')"
 
 # ── tools ────────────────────────────────────────────────────────────────────
 missing=()
@@ -64,14 +64,14 @@ detect_gpu_backend() {
   echo cpu
 }
 
-case "$VOXD_GPU" in
+case "$PHONOTYPE_GPU" in
   cpu|"") GPU_BACKEND=cpu ;;
   auto)   GPU_BACKEND="$(detect_gpu_backend)"
           msg "GPU auto-detect: $GPU_BACKEND" ;;
   cuda)   command -v nvcc >/dev/null 2>&1 || die "--gpu=cuda needs the CUDA toolkit (nvcc) on PATH"
           GPU_BACKEND=cuda ;;
   vulkan) GPU_BACKEND=vulkan ;;
-  *)      die "unknown GPU backend '$VOXD_GPU' (auto, cuda, vulkan, cpu)" ;;
+  *)      die "unknown GPU backend '$PHONOTYPE_GPU' (auto, cuda, vulkan, cpu)" ;;
 esac
 
 # ── whisper.cpp ──────────────────────────────────────────────────────────────
@@ -92,7 +92,7 @@ if [[ ! -f whisper.cpp/CMakeLists.txt ]]; then
 fi
 
 # A build dir made for another backend must be reconfigured from scratch.
-STAMP=whisper.cpp/build/.voxd-backend
+STAMP=whisper.cpp/build/.phonotype-backend
 if [[ -d whisper.cpp/build ]]; then
   if (( REBUILD )) || [[ "$(cat "$STAMP" 2>/dev/null || echo unknown)" != "$GPU_BACKEND" ]]; then
     msg "Removing whisper.cpp/build to configure for $GPU_BACKEND."
@@ -142,7 +142,7 @@ if [[ ! -x whisper.cpp/build/bin/parakeet-cli && -d whisper.cpp/examples/parakee
     || note "parakeet-cli build failed – the Parakeet engine won't be available."
 fi
 
-# ── link the binaries where an installed VOXD looks for them ────────────────
+# ── link the binaries where an installed Phonotype looks for them ────────────────
 mkdir -p "$HOME/.local/bin"
 for bin in whisper-cli parakeet-cli; do
   src="$PWD/whisper.cpp/build/bin/$bin"
@@ -167,10 +167,10 @@ if (( WITH_VENV )); then
     rm -rf .venv
     python3 -m venv .venv
   fi
-  msg "Installing VOXD into .venv (editable)…"
+  msg "Installing Phonotype into .venv (editable)…"
   .venv/bin/python -m pip install --quiet --upgrade pip
   .venv/bin/python -m pip install --quiet -e .
-  msg "Run it with:  .venv/bin/voxd --tray"
+  msg "Run it with:  .venv/bin/phonotype --tray"
 fi
 
-msg "Done. Speech models are downloaded from Settings → Models (or: voxd-model install <key>)."
+msg "Done. Speech models are downloaded from Settings → Models (or: phonotype-model install <key>)."

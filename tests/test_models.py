@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 def test_tiny_ru_is_in_catalogue():
-    import voxd.models as M
+    import phonotype.models as M
 
     assert "tiny-ru" in M.CATALOGUE
     size_mb, sha1, url = M.CATALOGUE["tiny-ru"]
@@ -11,7 +11,7 @@ def test_tiny_ru_is_in_catalogue():
 
 
 def test_filename_from_url_normalises():
-    import voxd.models as M
+    import phonotype.models as M
 
     assert M._filename_from_url("https://x/ggml-tiny-ru.bin") == "ggml-tiny-ru.bin"
     # missing ggml- prefix is added so list_local() can find it
@@ -25,7 +25,7 @@ def test_filename_from_url_normalises():
 
 
 def test_install_url_downloads(monkeypatch, tmp_path):
-    import voxd.models as M
+    import phonotype.models as M
 
     seen = {}
 
@@ -48,7 +48,7 @@ def test_install_url_downloads(monkeypatch, tmp_path):
 
 def test_set_active_accepts_local_path(monkeypatch, tmp_path):
     """A local .bin path is activated without requiring a catalogue entry."""
-    import voxd.models as M
+    import phonotype.models as M
 
     model = tmp_path / "custom" / "ggml-tiny-ru.bin"
     model.parent.mkdir(parents=True, exist_ok=True)
@@ -75,7 +75,7 @@ def test_set_active_accepts_local_path(monkeypatch, tmp_path):
 
 
 def test_set_active_accepts_url(monkeypatch, tmp_path):
-    import voxd.models as M
+    import phonotype.models as M
 
     downloaded = tmp_path / "models" / "ggml-tiny-ru.bin"
     monkeypatch.setattr(M, "install_url", lambda url, **_: downloaded)
@@ -96,7 +96,7 @@ def test_set_active_accepts_url(monkeypatch, tmp_path):
 
 
 def test_models_ensure_downloads(monkeypatch, tmp_path):
-    import voxd.models as M
+    import phonotype.models as M
 
     def _fake_download(url, dest, progress_cb=None):
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -111,7 +111,7 @@ def test_models_ensure_downloads(monkeypatch, tmp_path):
 
 
 def test_models_list_remove_set_active(monkeypatch, tmp_path):
-    import voxd.models as M
+    import phonotype.models as M
 
     # Prepare a fake cached model file
     cache = (tmp_path / "data" / "models")

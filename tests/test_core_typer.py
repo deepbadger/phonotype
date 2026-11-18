@@ -1,5 +1,5 @@
 def test_detect_backend_env(monkeypatch):
-    from voxd.core.typer import detect_backend
+    from phonotype.core.typer import detect_backend
     monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-1")
     monkeypatch.delenv("DISPLAY", raising=False)
     monkeypatch.setenv("XDG_SESSION_TYPE", "wayland")
@@ -7,7 +7,7 @@ def test_detect_backend_env(monkeypatch):
 
 
 def test_typer_paste_path(monkeypatch):
-    from voxd.core.typer import SimulatedTyper
+    from phonotype.core.typer import SimulatedTyper
     # Disable tools so it falls back to paste
     monkeypatch.setenv("WAYLAND_DISPLAY", "")
     monkeypatch.setenv("DISPLAY", "")
@@ -19,7 +19,7 @@ def test_typer_paste_path(monkeypatch):
 
 
 def test_will_paste_unicode(monkeypatch):
-    from voxd.core.typer import SimulatedTyper
+    from phonotype.core.typer import SimulatedTyper
     monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-1")
     t = SimulatedTyper(delay=10, start_delay=0)
     t.enabled = True
@@ -37,8 +37,8 @@ def test_will_paste_unicode(monkeypatch):
 def test_paste_preserves_clipboard(monkeypatch):
     """_paste should snapshot the existing clipboard and restore it after paste."""
     import sys, types
-    import voxd.core.typer as typer_mod
-    from voxd.core.typer import SimulatedTyper
+    import phonotype.core.typer as typer_mod
+    from phonotype.core.typer import SimulatedTyper
 
     pc = sys.modules["pyperclip"]
     pc._store["last"] = "USER_ORIGINAL"  # type: ignore[attr-defined]
@@ -70,8 +70,8 @@ def test_paste_no_restore_when_caller_pre_copied(monkeypatch):
     """If the saved snapshot equals the transcript (caller pre-copied),
     skip restoration — there's nothing useful to restore."""
     import sys, types
-    import voxd.core.typer as typer_mod
-    from voxd.core.typer import SimulatedTyper
+    import phonotype.core.typer as typer_mod
+    from phonotype.core.typer import SimulatedTyper
 
     pc = sys.modules["pyperclip"]
     pc._store["last"] = "TRANSCRIPT"  # type: ignore[attr-defined]

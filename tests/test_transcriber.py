@@ -4,7 +4,7 @@ import json
 
 
 def test_transcriber_generates_text(tmp_path, fake_whisper_run):
-    from voxd.core.transcriber import WhisperTranscriber
+    from phonotype.core.transcriber import WhisperTranscriber
 
     audio = tmp_path / "a.wav"; audio.write_bytes(b"\x00\x00")
     model = tmp_path / "m.bin"; model.write_bytes(b"x")
@@ -22,40 +22,40 @@ _BLOCK = ["Подписывайтесь на мой канал, ставьте �
 
 
 def test_is_hallucination_exact():
-    from voxd.core.transcriber import is_hallucination
+    from phonotype.core.transcriber import is_hallucination
     assert is_hallucination("Подписывайтесь на мой канал, ставьте лайки и пишите комментарии.", _BLOCK)
 
 
 def test_is_hallucination_case_and_whitespace_and_punct():
-    from voxd.core.transcriber import is_hallucination
+    from phonotype.core.transcriber import is_hallucination
     # different case, extra spaces, missing trailing period
     assert is_hallucination("  ПОДПИСЫВАЙТЕСЬ  на мой   канал, ставьте лайки и пишите комментарии  ", _BLOCK)
 
 
 def test_is_hallucination_repeated():
-    from voxd.core.transcriber import is_hallucination
+    from phonotype.core.transcriber import is_hallucination
     phrase = "Подписывайтесь на мой канал, ставьте лайки и пишите комментарии. "
     assert is_hallucination(phrase * 2, _BLOCK)
 
 
 def test_is_hallucination_real_speech_is_kept():
-    from voxd.core.transcriber import is_hallucination
+    from phonotype.core.transcriber import is_hallucination
     assert not is_hallucination("привет, как дела", _BLOCK)
 
 
 def test_is_hallucination_inside_real_text_is_kept():
-    from voxd.core.transcriber import is_hallucination
+    from phonotype.core.transcriber import is_hallucination
     text = "Сегодня поговорим о Python. Подписывайтесь на мой канал, ставьте лайки и пишите комментарии. Начнём."
     assert not is_hallucination(text, _BLOCK)
 
 
 def test_is_hallucination_disabled_when_no_blocklist():
-    from voxd.core.transcriber import is_hallucination
+    from phonotype.core.transcriber import is_hallucination
     assert not is_hallucination("Подписывайтесь на мой канал, ставьте лайки и пишите комментарии.", [])
 
 
 def test_parse_transcript_drops_hallucination(tmp_path):
-    from voxd.core.transcriber import WhisperTranscriber
+    from phonotype.core.transcriber import WhisperTranscriber
 
     model = tmp_path / "m.bin"; model.write_bytes(b"x")
     binary = tmp_path / "whisper-cli"; binary.write_text("#!/bin/sh\n"); binary.chmod(0o755)
@@ -70,7 +70,7 @@ def test_parse_transcript_drops_hallucination(tmp_path):
 
 
 def test_parse_transcript_keeps_normal_text(tmp_path):
-    from voxd.core.transcriber import WhisperTranscriber
+    from phonotype.core.transcriber import WhisperTranscriber
 
     model = tmp_path / "m.bin"; model.write_bytes(b"x")
     binary = tmp_path / "whisper-cli"; binary.write_text("#!/bin/sh\n"); binary.chmod(0o755)
@@ -103,12 +103,12 @@ def _capture_whisper_cmd(monkeypatch):
 
         return CP()
 
-    monkeypatch.setattr("voxd.core.transcriber.subprocess.run", _run)
+    monkeypatch.setattr("phonotype.core.transcriber.subprocess.run", _run)
     return captured
 
 
 def test_gpu_enabled_omits_no_gpu_flag(tmp_path, monkeypatch):
-    from voxd.core.transcriber import WhisperTranscriber
+    from phonotype.core.transcriber import WhisperTranscriber
 
     captured = _capture_whisper_cmd(monkeypatch)
     audio = tmp_path / "a.wav"; audio.write_bytes(b"\x00\x00")
@@ -122,7 +122,7 @@ def test_gpu_enabled_omits_no_gpu_flag(tmp_path, monkeypatch):
 
 
 def test_gpu_disabled_adds_no_gpu_flag(tmp_path, monkeypatch):
-    from voxd.core.transcriber import WhisperTranscriber
+    from phonotype.core.transcriber import WhisperTranscriber
 
     captured = _capture_whisper_cmd(monkeypatch)
     audio = tmp_path / "a.wav"; audio.write_bytes(b"\x00\x00")
@@ -160,7 +160,7 @@ def _stub_run_with_stderr(monkeypatch, state):
 
         return CP()
 
-    monkeypatch.setattr("voxd.core.transcriber.subprocess.run", _run)
+    monkeypatch.setattr("phonotype.core.transcriber.subprocess.run", _run)
 
 
 _STDERR_TWO_DEVICES = (
@@ -177,7 +177,7 @@ _STDERR_PINNED_NVIDIA = (
 
 
 def test_find_gpu_icd_prefers_nvidia(tmp_path, monkeypatch):
-    from voxd.core import transcriber as tr
+    from phonotype.core import transcriber as tr
 
     nvidia = _make_icd(tmp_path, "nvidia_icd.json", "libGLX_nvidia.so.0")
     intel = _make_icd(tmp_path, "intel_icd.x86_64.json", "libvulkan_intel.so")
@@ -194,8 +194,8 @@ def test_find_gpu_icd_prefers_nvidia(tmp_path, monkeypatch):
 
 
 def test_transcribe_pins_nvidia_driver(tmp_path, monkeypatch):
-    from voxd.core import transcriber as tr
-    from voxd.core.transcriber import WhisperTranscriber
+    from phonotype.core import transcriber as tr
+    from phonotype.core.transcriber import WhisperTranscriber
 
     nvidia = _make_icd(tmp_path, "nvidia_icd.json", "libGLX_nvidia.so.0")
     intel = _make_icd(tmp_path, "intel_icd.x86_64.json", "libvulkan_intel.so")
@@ -217,8 +217,8 @@ def test_transcribe_pins_nvidia_driver(tmp_path, monkeypatch):
 
 
 def test_single_gpu_driver_does_not_pin(tmp_path, monkeypatch):
-    from voxd.core import transcriber as tr
-    from voxd.core.transcriber import WhisperTranscriber
+    from phonotype.core import transcriber as tr
+    from phonotype.core.transcriber import WhisperTranscriber
 
     nvidia = _make_icd(tmp_path, "nvidia_icd.json", "libGLX_nvidia.so.0")
     monkeypatch.setattr(tr, "_list_vulkan_icd_files", lambda: [nvidia])
@@ -236,8 +236,8 @@ def test_single_gpu_driver_does_not_pin(tmp_path, monkeypatch):
 
 
 def test_ineffective_driver_pin_disables_pinning(tmp_path, monkeypatch):
-    from voxd.core import transcriber as tr
-    from voxd.core.transcriber import WhisperTranscriber
+    from phonotype.core import transcriber as tr
+    from phonotype.core.transcriber import WhisperTranscriber
 
     nvidia = _make_icd(tmp_path, "nvidia_icd.json", "libGLX_nvidia.so.0")
     intel = _make_icd(tmp_path, "intel_icd.x86_64.json", "libvulkan_intel.so")
@@ -271,8 +271,8 @@ _STDERR_GPU_OOM = (
 
 
 def test_gpu_oom_falls_back_to_cpu(tmp_path, monkeypatch):
-    from voxd.core import transcriber as tr
-    from voxd.core.transcriber import WhisperTranscriber
+    from phonotype.core import transcriber as tr
+    from phonotype.core.transcriber import WhisperTranscriber
 
     # Keep the call count hermetic on hosts that have nvidia-smi installed.
     monkeypatch.setattr(tr, "_query_free_vram_mb", lambda: None)
@@ -299,7 +299,7 @@ def test_gpu_oom_falls_back_to_cpu(tmp_path, monkeypatch):
             cp.stderr = _STDERR_GPU_OOM
         return cp
 
-    monkeypatch.setattr("voxd.core.transcriber.subprocess.run", _run)
+    monkeypatch.setattr("phonotype.core.transcriber.subprocess.run", _run)
 
     audio = tmp_path / "a.wav"; audio.write_bytes(b"\x00\x00")
     model = tmp_path / "m.bin"; model.write_bytes(b"x")
@@ -317,8 +317,8 @@ def test_gpu_oom_falls_back_to_cpu(tmp_path, monkeypatch):
 
 
 def test_non_oom_failure_is_not_retried(tmp_path, monkeypatch):
-    from voxd.core import transcriber as tr
-    from voxd.core.transcriber import WhisperTranscriber
+    from phonotype.core import transcriber as tr
+    from phonotype.core.transcriber import WhisperTranscriber
 
     monkeypatch.setattr(tr, "_query_free_vram_mb", lambda: None)
     calls = []
@@ -333,7 +333,7 @@ def test_non_oom_failure_is_not_retried(tmp_path, monkeypatch):
 
         return CP()
 
-    monkeypatch.setattr("voxd.core.transcriber.subprocess.run", _run)
+    monkeypatch.setattr("phonotype.core.transcriber.subprocess.run", _run)
 
     audio = tmp_path / "a.wav"; audio.write_bytes(b"\x00\x00")
     model = tmp_path / "m.bin"; model.write_bytes(b"x")
@@ -356,7 +356,7 @@ def _make_transcriber_files(tmp_path, model_mb=2):
 
 
 def test_parse_nvidia_smi_free_mb():
-    from voxd.core import transcriber as tr
+    from phonotype.core import transcriber as tr
     assert tr._parse_nvidia_smi_free_mb("3383\n") == 3383
     assert tr._parse_nvidia_smi_free_mb("512\n8192\n") == 8192  # max across GPUs
     assert tr._parse_nvidia_smi_free_mb("1024 MiB\n") == 1024
@@ -365,7 +365,7 @@ def test_parse_nvidia_smi_free_mb():
 
 
 def test_estimate_min_vram_mb(tmp_path):
-    from voxd.core import transcriber as tr
+    from phonotype.core import transcriber as tr
     model = tmp_path / "m.bin"
     model.write_bytes(b"\x00" * (5 * 1024 * 1024))
     assert tr._estimate_min_vram_mb(model) == 5 + tr._VRAM_MARGIN_MB
@@ -373,8 +373,8 @@ def test_estimate_min_vram_mb(tmp_path):
 
 
 def test_vram_preflight_low_memory_forces_cpu(tmp_path, monkeypatch):
-    from voxd.core import transcriber as tr
-    from voxd.core.transcriber import WhisperTranscriber
+    from phonotype.core import transcriber as tr
+    from phonotype.core.transcriber import WhisperTranscriber
 
     captured = _capture_whisper_cmd(monkeypatch)
     monkeypatch.setattr(tr, "_query_free_vram_mb", lambda: 64)  # nearly exhausted
@@ -390,8 +390,8 @@ def test_vram_preflight_low_memory_forces_cpu(tmp_path, monkeypatch):
 
 
 def test_vram_preflight_enough_memory_keeps_gpu(tmp_path, monkeypatch):
-    from voxd.core import transcriber as tr
-    from voxd.core.transcriber import WhisperTranscriber
+    from phonotype.core import transcriber as tr
+    from phonotype.core.transcriber import WhisperTranscriber
 
     captured = _capture_whisper_cmd(monkeypatch)
     monkeypatch.setattr(tr, "_query_free_vram_mb", lambda: 4096)
@@ -405,8 +405,8 @@ def test_vram_preflight_enough_memory_keeps_gpu(tmp_path, monkeypatch):
 
 
 def test_vram_preflight_unknown_free_memory_keeps_gpu(tmp_path, monkeypatch):
-    from voxd.core import transcriber as tr
-    from voxd.core.transcriber import WhisperTranscriber
+    from phonotype.core import transcriber as tr
+    from phonotype.core.transcriber import WhisperTranscriber
 
     captured = _capture_whisper_cmd(monkeypatch)
     # No nvidia-smi (non-NVIDIA system) → the check must not force CPU.
@@ -420,8 +420,8 @@ def test_vram_preflight_unknown_free_memory_keeps_gpu(tmp_path, monkeypatch):
 
 
 def test_vram_preflight_disabled_never_queries(tmp_path, monkeypatch):
-    from voxd.core import transcriber as tr
-    from voxd.core.transcriber import WhisperTranscriber
+    from phonotype.core import transcriber as tr
+    from phonotype.core.transcriber import WhisperTranscriber
 
     captured = _capture_whisper_cmd(monkeypatch)
 
@@ -440,8 +440,8 @@ def test_vram_preflight_disabled_never_queries(tmp_path, monkeypatch):
 # --- Flash attention (-fa) -----------------------------------------------------
 
 def test_flash_attn_adds_flag(tmp_path, monkeypatch):
-    from voxd.core import transcriber as tr
-    from voxd.core.transcriber import WhisperTranscriber
+    from phonotype.core import transcriber as tr
+    from phonotype.core.transcriber import WhisperTranscriber
 
     captured = _capture_whisper_cmd(monkeypatch)
     monkeypatch.setattr(tr, "_FA_UNSUPPORTED_BINS", set())
@@ -455,8 +455,8 @@ def test_flash_attn_adds_flag(tmp_path, monkeypatch):
 
 
 def test_flash_attn_off_by_default(tmp_path, monkeypatch):
-    from voxd.core import transcriber as tr
-    from voxd.core.transcriber import WhisperTranscriber
+    from phonotype.core import transcriber as tr
+    from phonotype.core.transcriber import WhisperTranscriber
 
     captured = _capture_whisper_cmd(monkeypatch)
     monkeypatch.setattr(tr, "_query_free_vram_mb", lambda: None)
@@ -469,8 +469,8 @@ def test_flash_attn_off_by_default(tmp_path, monkeypatch):
 
 
 def test_flash_attn_unknown_arg_retries_and_remembers(tmp_path, monkeypatch):
-    from voxd.core import transcriber as tr
-    from voxd.core.transcriber import WhisperTranscriber
+    from phonotype.core import transcriber as tr
+    from phonotype.core.transcriber import WhisperTranscriber
 
     monkeypatch.setattr(tr, "_FA_UNSUPPORTED_BINS", set())
     monkeypatch.setattr(tr, "_query_free_vram_mb", lambda: None)
@@ -496,7 +496,7 @@ def test_flash_attn_unknown_arg_retries_and_remembers(tmp_path, monkeypatch):
             cp.stderr = ""
         return cp
 
-    monkeypatch.setattr("voxd.core.transcriber.subprocess.run", _run)
+    monkeypatch.setattr("phonotype.core.transcriber.subprocess.run", _run)
     audio, model, binary = _make_transcriber_files(tmp_path)
 
     t = WhisperTranscriber(str(model), str(binary), gpu_enabled=True,
@@ -518,7 +518,7 @@ def test_flash_attn_unknown_arg_retries_and_remembers(tmp_path, monkeypatch):
 
 
 def test_transcriber_missing_input_raises(tmp_path):
-    from voxd.core.transcriber import WhisperTranscriber
+    from phonotype.core.transcriber import WhisperTranscriber
 
     model = tmp_path / "m.bin"; model.write_bytes(b"x")
     binary = tmp_path / "whisper-cli"; binary.write_text("#!/bin/sh\n"); binary.chmod(0o755)

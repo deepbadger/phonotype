@@ -1,9 +1,9 @@
-"""Model inventory helpers (voxd.models) and the Qt models page."""
+"""Model inventory helpers (phonotype.models) and the Qt models page."""
 import pytest
 
 
 def _setup_dirs(monkeypatch, tmp_path):
-    import voxd.models as M
+    import phonotype.models as M
     cache = tmp_path / "cache"; cache.mkdir()
     repo = tmp_path / "repo"; repo.mkdir()
     monkeypatch.setattr(M, "CACHE_DIR", cache)
@@ -17,7 +17,7 @@ def _model(d, name, size=10):
     return p
 
 
-# ── voxd.models helpers ─────────────────────────────────────────────────────
+# ── phonotype.models helpers ─────────────────────────────────────────────────────
 
 def test_installed_models_cache_repo_and_dedupe(monkeypatch, tmp_path):
     M, cache, repo = _setup_dirs(monkeypatch, tmp_path)
@@ -50,7 +50,7 @@ def test_remove_file_drops_repo_symlink(monkeypatch, tmp_path):
 
 
 def test_active_model_path_follows_engine(tmp_path):
-    import voxd.models as M
+    import phonotype.models as M
     w = _model(tmp_path, "ggml-tiny.bin"); p = _model(tmp_path, "ggml-parakeet-x.bin")
     cfg = {"asr_engine": "whisper", "whisper_model_path": str(w), "parakeet_model_path": str(p)}
     assert M.active_model_path(cfg) == w.resolve()
@@ -60,7 +60,7 @@ def test_active_model_path_follows_engine(tmp_path):
 
 
 def test_replacement_prefers_same_engine_then_largest(tmp_path):
-    import voxd.models as M
+    import phonotype.models as M
     mk = lambda name, eng, size: M.InstalledModel(tmp_path / name, None, eng, size)
     a, b, c = mk("a", "whisper", 10), mk("b", "whisper", 30), mk("c", "parakeet", 99)
     assert M.replacement_for(a, [a, b, c]) is b          # same engine wins over bigger
@@ -69,7 +69,7 @@ def test_replacement_prefers_same_engine_then_largest(tmp_path):
 
 
 def test_human_size():
-    import voxd.models as M
+    import phonotype.models as M
     assert M.human_size(75 * 1024 * 1024) == "75 MB"
     assert M.human_size(1536 * 1024 * 1024) == "1.5 GB"
 
@@ -80,8 +80,8 @@ def test_human_size():
 def page_env(monkeypatch, tmp_path, qapp):
     from PyQt6.QtWidgets import QMessageBox
     M, cache, repo = _setup_dirs(monkeypatch, tmp_path)
-    import voxd.core.model_manager as MM
-    from voxd.core.config import get_config
+    import phonotype.core.model_manager as MM
+    from phonotype.core.config import get_config
 
     activated = []
 
@@ -161,7 +161,7 @@ def test_page_delete_last_model_clears_config(page_env):
 
 
 def test_symlink_into_readonly_install_is_not_fatal(monkeypatch, tmp_path):
-    """Packaged installs live in /opt/voxd: mirroring the model there must not fail the download."""
+    """Packaged installs live in /opt/phonotype: mirroring the model there must not fail the download."""
     M, cache, repo = _setup_dirs(monkeypatch, tmp_path)
     blocker = tmp_path / "opt"; blocker.write_text("")          # a file where a dir is expected
     monkeypatch.setattr(M, "REPO_MODELS", blocker / "whisper.cpp" / "models")

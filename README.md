@@ -1,591 +1,189 @@
-# VOXD - Voice-Type / dictation app for Linux 🗣️⌨️
-<div align="center">
-  <img src="src/voxd/assets/voxd-1.png" alt="VOXD logo" width="128" />
-</div>
+# Phonotype
 
-Running in background, provides fast **voice-to-text typing** in any Linux app.  
-Using <span style="color:#FF4500">**LOCAL** (offline)</span> voice processing, with optional <span style="color:#FF4500">**LOCAL**</span> (offline) AI text post-processing.  
-Runs fine even on older CPUs. No GPU required — but optional GPU acceleration is available (see *GPU acceleration* below).
+Voice typing for Linux: press a hotkey, speak, press again — the text is typed into
+whatever window has focus. Speech is recognised on your own machine (whisper.cpp or
+NVIDIA Parakeet); an optional LLM pass can turn a rough dictation into a clean request.
 
-Hit your <span style="color:#FF4500">**hotkey shortcut**</span> -> speak -> hotkey again -> watch your words appear wherever the cursor currently is, even AI-rewritten as a poem or a C++ code.  
-  
-**Tested & Works on:**
-- Arch / Hyprland
-- Omarchy 3.0
-- Ubuntu 24.04 / GNOME
-- Ubuntu 25.04 / Sway
-- Fedora 42 / KDE
-- Pop!_OS 22 / COSMIC
-- Mint 22 / Cinnamon
-- openSUSE / Leap 15.6
+Phonotype is an independent continuation of [VOXD](https://github.com/jakovius/voxd)
+by Jakov Ivkovic (MIT). It is not affiliated with or endorsed by the VOXD project.
 
+## Supported platform
 
-## Highlights
-
-| Feature                          | Notes                                                                   |
-| -------------------------------- | ----------------------------------------------------------------------- |
-| **Whisper.cpp** backend          | Local, offline, fast  ASR.   |
-| **Simulated typing**             | instantly types straight into any currently focused input window. Even on Wayland! (*ydotool*).  |
-| **Clipboard**                    | Auto-copies into clipboard - ready for pasting, if desired              |
-| **Languages**                    | 99+ languages. Provides default language config and session language override          |
-| **AIPP**, AI Post-Processing	   | AI-rewriting via local or cloud LLMs. GUI prompt editor.                |  
-| **Multiple UI** surfaces         | CLI, GUI (minimal PyQt6), TRAY (system tray), FLUX (triggered by voice activity detection, beta) |
-| **Logging** & **performance**    | Session log plus your own optional local performance data (CSV).        |
- 
-  
-
-## Setup
-
-Complete the 2 steps:  
-1. <span style="color:#FF4500">**Install VOXD**</span>
-2. <span style="color:#FF4500">**setup a hotkey**</span>.  
-
-### 1. Install VOXD
-
-#### Install from Release (recommended)
-Download the package for your distro and architecture from the latest release, then install with your package manager.
-
-Latest builds: [GitHub Releases (Latest)](https://github.com/jakovius/voxd/releases/latest)  
-
-#### **Ubuntu / Debian (.deb)**
-
-```bash
-# Update package lists and install the downloaded .deb package:
-sudo apt update
-sudo apt install -y ./voxd_*_amd64.deb    # or ./voxd_*_arm64.deb on ARM systems
-```
-
----
-
-#### **Fedora (.rpm)**
-
-```bash
-# Update repositories and install the downloaded .rpm package:
-sudo dnf update -y
-sudo dnf install -y ./voxd-*-x86_64.rpm  # or the arm64 counterpart if on an ARM device
-```
-
----
-
-#### **Arch Linux (.pkg.tar.zst)**
-
-```bash
-# Synchronize package databases and install the downloaded .pkg.tar.zst package:
-sudo pacman -Sy
-sudo pacman -U ./voxd-*-x86_64.pkg.tar.zst    # or the arm64 counterpart if on an ARM device
-```
-
----
-
-#### **openSUSE (.rpm)**
-
-```bash
-# Refresh repositories and install the downloaded .rpm package with dependency resolution:
-sudo zypper refresh
-sudo zypper install --force-resolution ./voxd-*-x86_64.rpm   # or the arm64 counterpart if on an ARM device
-```
-
----
-
-#### **Gentoo (overlay)**
-
-A community-maintained ebuild lives in the third-party [`deepbadger` overlay](https://github.com/deepbadger/gentoo-overlay) — there is no official binary release for Gentoo, but you can install through Portage:
-
-```bash
-# Add the overlay (one-time, requires app-eselect/eselect-repository)
-sudo eselect repository add deepbadger git https://github.com/deepbadger/gentoo-overlay.git
-sudo emaint sync --repo deepbadger
-
-# Install
-sudo emerge --ask voxd
-```
-
-Refer to the overlay's own README for the exact package atom, USE flags, and any keywording quirks.
-
-#### Alternatively: Download the source or clone the repo, and run the setup:  
-
-```bash
-git clone https://github.com/jakovius/voxd.git
-
-cd voxd && ./setup.sh
-
-# requires sudo for packages & REBOOT (ydotool setup on Wayland systems). Launchers (GUI, Tray, Flux) are installed automatically.
-```
-
-Setup is non-interactive with minimal console output; a detailed setup log is saved in the repo directory (e.g. `2025-09-18-setup-log.txt`).
-
-##### GPU acceleration (optional)
-
-By default `setup.sh` builds a CPU-only `whisper-cli` (and may reuse a prebuilt CPU binary). To build whisper.cpp with GPU support, opt in:
-
-```bash
-VOXD_GPU=auto ./setup.sh        # or: ./setup.sh --gpu
-```
-
-`auto` picks **CUDA** when an NVIDIA GPU and the CUDA toolkit (`nvcc`) are present, otherwise **Vulkan** (AMD/Intel/NVIDIA), otherwise it falls back to CPU. You can force a backend with `VOXD_GPU=cuda` / `VOXD_GPU=vulkan` (or `--gpu=cuda` / `--gpu=vulkan`). A GPU build forces a from-source build (prebuilt binaries are CPU-only) and installs the Vulkan loader/shader compiler when needed. CUDA requires the toolkit to be installed already.
-
-At runtime the GPU is used automatically. To force CPU on a GPU build without rebuilding, uncheck **Use GPU when available** in the GUI settings, or set `whisper_gpu_enabled: false` in `~/.config/voxd/config.yaml` (this passes `-ng` to whisper-cli).
-
-When a long desktop session exhausts VRAM (browser, compositor, …), VOXD degrades gracefully instead of failing: just before each transcription it checks free VRAM via `nvidia-smi` and goes straight to CPU when the model clearly cannot fit (`whisper_vram_check: true`), and if a GPU run still hits out-of-memory it retries that dictation on CPU. Tray mode shows a desktop notification when this happens. The GPU is re-tried on every dictation, so speed recovers automatically once VRAM frees up — for a permanently tight card, switch to a smaller/quantized model (e.g. `voxd-model install large-v3-turbo-q5_0`). Setting `whisper_flash_attn: true` additionally passes `-fa` to whisper-cli (faster, smaller compute buffers; auto-disabled if the binary doesn't support it).
-
-#### Or via Python sdist (`voxd-<version>.tar.gz` from a release)
-
-Each GitHub release also publishes a Python source distribution that can be installed straight with `pip` (or `pipx`) — useful when you want to manage VOXD inside an existing Python environment instead of via a system package:
-
-```bash
-# Pick a release at https://github.com/jakovius/voxd/releases
-pipx install ./voxd-1.4.1.tar.gz     # or:  pip install ./voxd-1.4.1.tar.gz
-```
-
-This installs only the Python side; you still need `whisper-cli` (built by `setup.sh`, or VOXD will offer to build it on first run) and the system tools (ydotool/xclip/wl-clipboard/...) listed in the package dependencies.
-
-**Reboot** the system!  
-(unless on an X11 system; on most modern systems there is Wayland, so **ydotool** is required for typing and needs rebooting for user setup).  
-
-### 2. **Setup a global hotkey** shortcut  in your system, for recording/stop:  
-a. Open your system keyboard-shortcuts panel:  
-  - *GNOME:* Settings → Keyboard → "Custom Shortcuts"  
-  - *KDE / XFCE / Cinnamon:* similar path.  
-  - *Hyprland / Sway:* just add a keybinding in the respective config file.  
-
-b. **The command** to assign to the shortcut hotkey (EXACTLY as given):  
-
-`bash -c 'voxd --trigger-record'`  
-
-c. Click **Add / Save**.  
-
-First, run the app in terminal via just  
-`voxd` or `voxd --setup` command.  
-The first run will do some initial setup (voice model, LLM model for AIPP, ydotool user setup).  
-
-### <span style="color:#FF4500">READY! → Go type anywhere with your voice!</span>  
-
-
----
-
-## Usage
-
-### Use the installed VOXD launchers (your app launcher) or launch via Terminal, in any mode:
-```bash
-voxd        # CLI (interactive); 'h' shows commands inside CLI. FIRST RUN: a necessary initial setup.
-voxd --rh   # directly starts hotkey-controlled continuous recording in Terminal
-voxd -h     # show top-level help and quick-actions
-voxd --gui  # friendly GUI window--just leave it in the background to voice-type via your hotkey
-voxd --tray # sits in the tray; perfect for unobstructed dictation (hotkey-driven also)
-voxd --flux # VAD (Voice Activity Detection), voice-triggered continuous dictation (in beta)
-```
-
-Leave VOXD running in the background -> go to any app where you want to voice-type and:  
-
-| Press hotkey …   | VOXD does …                                                 |
-| ---------------- | ----------------------------------------------------------- |
-| **First press**  | start recording                                             |
-| **Second press** | stop ⇢ [transcribe ⇢ copy to clipboard] ⇢ types the output into any focused app |  
-
-Otherwise, if in --flux (beta), **just speak**.
-
-### Autostart 
-For practical reasons (always ready to type & low system footprint), it is advised to enable voxd user daemon:
-
-- Enable: `voxd --autostart true`
-- Disable: `voxd --autostart false`
-
-This launches `voxd --tray` automatically after user login using systemd user services when available; otherwise it falls back to an XDG Autostart entry (`~/.config/autostart/voxd-tray.desktop`).
-
-### Languages
-
-- **Supported codes**: ISO 639-1 (e.g., `en`, `es`, `de`, `sv`) and `auto` (auto-detect, not advised).
-- **Default**: `en`. You can override per run or persist it.
-- **Change via CLI (session-only)**, examples:
-```bash
-voxd --gui  --lang auto
-voxd --tray --lang es
-voxd --flux --lang de
-voxd --rh   --lang sv
-```
-- **Persist via CLI**: `voxd --cfg` opens the config file for editing. Set:
-```yaml
-# ~/.config/voxd/config.yaml
-language: sv  # or 'auto', 'es', etc.
-```
-- **Change via GUI/Tray (persisted)**: Menu → **Language**. Saved to `~/.config/voxd/config.yaml` as `language`.
-- **Model note**: For non‑English languages, use a multilingual Whisper model (not `*.en.bin`). Install/switch via GUI “Whisper Models” or `voxd-model` (e.g., `ggml-base.bin`, `small`, `medium`, `large-v3`).
-- **Tip**: `auto` works well, but setting the exact language can improve accuracy. If you pick a non‑English language while using an English‑only model, VOXD will warn and transcription quality may drop.
-
-
-### 🎙️  Managing speech models
-
-VOXD needs a Whisper GGML model file. There is one default model readily setup in the app (base.en).  
-Use the built-in model-manager in GUI mode or via CLI mode in Terminal to fetch any other model.  
-The voice models are downloaded into ~/.local/share/voxd/models/ and VOXD app will
-automatically have them visible.
-
-CLI model management examples:
-```bash
-voxd-model list	# show models already on disk
-voxd-model install tiny.en  #	download another model
-voxd-model --no-check install base.en # download a model and skip SHA-1 verification
-voxd-model remove tiny.en	# delete a model
-voxd-model use tiny.en	# make that model the default (edits config.yaml)
-```
-
-Models for download (size MB):
-
-| Model | Size (MB) | Filename |
-|-------|----------:|----------|
-| tiny | 75 | ggml-tiny.bin |
-| tiny-q5_1 | 31 | ggml-tiny-q5_1.bin |
-| tiny-q8_0 | 42 | ggml-tiny-q8_0.bin |
-| tiny.en | 75 | ggml-tiny.en.bin |
-| tiny.en-q5_1 | 31 | ggml-tiny.en-q5_1.bin |
-| tiny.en-q8_0 | 42 | ggml-tiny.en-q8_0.bin |
-| base | 142 | ggml-base.bin |
-| base-q5_1 | 57 | ggml-base-q5_1.bin |
-| base-q8_0 | 78 | ggml-base-q8_0.bin |
-| base.en | 142 | ggml-base.en.bin |
-| base.en-q5_1 | 57 | ggml-base.en-q5_1.bin |
-| base.en-q8_0 | 78 | ggml-base.en-q8_0.bin |
-| small | 466 | ggml-small.bin |
-| small-q5_1 | 181 | ggml-small-q5_1.bin |
-| small-q8_0 | 252 | ggml-small-q8_0.bin |
-| small.en | 466 | ggml-small.en.bin |
-| small.en-q5_1 | 181 | ggml-small.en-q5_1.bin |
-| small.en-q8_0 | 252 | ggml-small.en-q8_0.bin |
-| small.en-tdrz | 465 | ggml-small.en-tdrz.bin |
-| medium | 1500 | ggml-medium.bin |
-| medium-q5_0 | 514 | ggml-medium-q5_0.bin |
-| medium-q8_0 | 785 | ggml-medium-q8_0.bin |
-| medium.en | 1500 | ggml-medium.en.bin |
-| medium.en-q5_0 | 514 | ggml-medium.en-q5_0.bin |
-| medium.en-q8_0 | 785 | ggml-medium.en-q8_0.bin |
-| large-v1 | 2900 | ggml-large-v1.bin |
-| large-v2 | 2900 | ggml-large-v2.bin |
-| large-v2-q5_0 | 1100 | ggml-large-v2-q5_0.bin |
-| large-v2-q8_0 | 1500 | ggml-large-v2-q8_0.bin |
-| large-v3 | 2900 | ggml-large-v3.bin |
-| large-v3-q5_0 | 1100 | ggml-large-v3-q5_0.bin |
-| large-v3-turbo | 1500 | ggml-large-v3-turbo.bin |
-| large-v3-turbo-q5_0 | 547 | ggml-large-v3-turbo-q5_0.bin |
-| large-v3-turbo-q8_0 | 834 | ggml-large-v3-turbo-q8_0.bin |
-| parakeet-tdt-0.6b-v3 | 1256 | ggml-parakeet-tdt-0.6b-v3-f16.bin |
-| parakeet-tdt-0.6b-v3-q8_0 | 669 | ggml-parakeet-tdt-0.6b-v3-q8_0.bin |
-| parakeet-tdt-0.6b-v3-q4_k | 416 | ggml-parakeet-tdt-0.6b-v3-q4_k.bin |
-
-#### Parakeet engine (faster alternative to Whisper)
-
-[NVIDIA parakeet-tdt-0.6b-v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) runs through `parakeet-cli` from the same `whisper.cpp` build (`setup.sh` builds it). It covers 25 European languages including Russian, detects the language itself (the `language` setting is ignored), writes punctuation and capitalization, and does not invent text on silence. Unlike Whisper it does not pad every clip to a 30-second window, so a short dictation is several times faster, needs less VRAM, and stays usable on CPU when the GPU is busy.
-
-```bash
-voxd-model install parakeet-tdt-0.6b-v3   # f16, best quality; -q8_0 / -q4_k are smaller
-voxd-model use parakeet-tdt-0.6b-v3       # sets asr_engine: parakeet
-voxd-model use large-v3-q5_0              # any Whisper model switches back to asr_engine: whisper
-```
-
-The engine is the `asr_engine` key (`whisper` | `parakeet`) in `config.yaml`; `parakeet_model_path` / `parakeet_binary` are auto-detected when empty (env overrides: `VOXD_PARAKEET_MODEL_PATH`, `VOXD_PARAKEET_BIN`). GPU settings (`whisper_gpu_enabled`, `whisper_gpu_device`, `whisper_vram_check`) apply to both engines. To compare engines on your own recordings, see `tools/bench_asr.py`.
-
-#### Custom / HuggingFace models
-
-Anything that is a valid `whisper.cpp` GGML file (`ggml-<name>.bin`) and lives in `~/.local/share/voxd/models/` is auto-detected:
-- The **Models** page of the settings window (GUI *Options → Speech Models*, tray *Speech Model → Manage models…*) shows every model on disk under "On this computer" with its engine, size and the total space used, with *Use* / *Delete* per model; real files dropped into `whisper.cpp/models/` are listed too. Deleting the model in use switches to another installed one. The catalogue below it has an engine filter, a search box and a single *Download and use* action.
-- The tray's *Speech Model* submenu lists the installed models; one click switches model and engine.
-- `voxd-model use` accepts a catalogue key, a local `.bin` path or a URL.
-
-For HuggingFace checkpoints (PyTorch / safetensors — e.g. fine-tuned models like `antony66/whisper-large-v3-russian`) there is a converter helper at the repo root:
-
-```bash
-./add-hf-model.sh <hf-repo> <local-name> [--quantize q5_0|q8_0]
-
-# example: convert a Russian-fine-tuned large-v3 and quantize to q5_0
-./add-hf-model.sh antony66/whisper-large-v3-russian large-v3-ru --quantize q5_0
-```
-
-The script clones the HF checkpoint (needs `git-lfs`), runs `whisper.cpp/models/convert-h5-to-ggml.py` against it, optionally quantizes, and drops the result into the models dir. After it finishes, open *Whisper Models* in the GUI → click *Activate* on the new row, and don't forget to switch the language (e.g. `language: ru` for the example above) — single-language fine-tunes need the matching `language` setting, otherwise transcription quality drops.
-
-Requirements: `.venv` populated (run `./dev-gui.sh --no-run` once), `whisper.cpp` built (`./setup.sh`), `git-lfs` installed, and ~10–12 GB free RAM for `large-v3` conversion.
-
----
-
-## ⚙️ User Config
-
-*Settings* (tray menu or GUI *Options*) opens one window with a sidebar: **Recognition** (engine, model, language, GPU, VRAM check, phantom-phrase filter; rows that don't apply to the active engine are hidden), **Models**, **Typing**, **Audio**, **AI processing** and **Application** (autostart, logging, metrics, the global-shortcut command). Every change applies immediately.
-
-Available in GUI and TRAY modes ("Settings"), but directly here:
-`~/.config/voxd/config.yaml`
-
-A few keys worth knowing about:
-
-| Key | Default | What it does |
+| | Supported and tested | Should work, not tested |
 |---|---|---|
-| `language` | `en` | Whisper language code (`auto`, `ru`, `de`, …). Single-language fine-tunes need this set explicitly. |
-| `typing` | `true` | Type the transcript into the focused window via ydotool/xdotool. |
-| `typing_delay` | `1` | Per-character delay (ms) for keystroke emulation. `0` triggers paste mode (Ctrl+(Shift+)V) instead. |
-| `paste_unicode` | `true` | When the transcript contains any non-ASCII (Cyrillic, accents, emoji, …) route it through the clipboard automatically. ydotool/xdotool typing depends on the active keyboard layout and silently drops keys that have no keysym for the current layout — so without this, e.g. Russian text comes out as scattered noise. |
-| `paste_preserve_clipboard` | `true` | Snapshot the user's clipboard before paste-mode replaces it with the transcript, and restore it after `paste_restore_delay_ms`. Trade-off: the transcript no longer lingers in the clipboard for manual re-paste. Set to `false` to keep the old behaviour. |
-| `paste_restore_delay_ms` | `200` | Pause between sending the paste shortcut and restoring the clipboard. Increase if the focused window is slow to consume Ctrl+V (remote sessions, heavy editors). |
-| `ctrl_v_paste` | `false` | Use plain `Ctrl+V` instead of the default `Ctrl+Shift+V` for paste mode (some terminals and IDEs need the former). |
-| `mic_autoset_enabled` | `true` | Best-effort: unmute the default mic and set its level to `mic_autoset_level` via wpctl/pactl/amixer at startup. Helps avoid clipping. |
+| Distribution | Gentoo | any distribution, from source |
+| Init system | OpenRC (user services) | systemd user units |
+| Session | KDE Plasma on Wayland (`ydotool`) | X11 (`xdotool`), other desktops |
+| Compute | NVIDIA CUDA, CPU | Vulkan |
+| Python | 3.12+ | — |
 
----
+Everything in the right-hand column is kept in the tree but nobody checks it before a
+release. Reports and patches are welcome; there is no guarantee.
 
-## 🧠 AI Post-Processing (AIPP)
-Your spoken words can be magically cleaned and rendered into e.g. neatly formated email, a poem, or straight away into a programing code!  
+What Phonotype is: a tray application with a settings window, plus a small command-line
+interface for the hotkey, diagnostics and scripting.
 
-VOXD can optionally post-process your transcripts using LOCAL (on-machine, **llama.cpp**, **Ollama**) or cloud LLMs (like **OpenAI, Anthropic, or xAI**).  
-For the local AIPP, **llama.cpp** is available out-of-the-box, with a default model.  
-You can also **[install Ollama](https://ollama.ai)** and download a model that can be run on your machine, e.g. `ollama pull gemma3:latest`.   
-You can enable, configure, and manage prompts directly from the GUI.
+## Installation
 
-### Enable AIPP:
-In CLI mode, use `--aipp` argument.  
-In GUI or TRAY mode, all relevant settings are in: "*AI Post-Processing*".  
-**Seleting provider & model** - models are tied to their respective providers!  
-**Editing Prompts** - Select "*Manage prompts*" or "*Prompts*" to edit up to 4 of them.
-
-## Supported providers:
-
-- **llama.cpp** (local)
-- **Ollama** (local)  
-- **OpenAI**  
-- **Anthropic**  
-- **xAI**  
-
----
-
-### AIPP Model Management
-
-#### **Model Storage**
-```
-~/.local/share/voxd/llamacpp_models/
-```
-
-#### **Adding Models | Requirements**
-
-
-- **GGUF** format **only** (`.gguf` extension)
-- **Quantized models recommended** (Q4_0, Q4_1, Q5_0, etc.)
-- ❌ **Not supported:** PyTorch (`.pth`), Safetensors (`.safetensors`), ONNX
-
-**Step 1:** Download a `.gguf` model from [Hugging Face](https://huggingface.co/models?search=gguf)
-```bash
-# Example: Download to model directory
-cd ~/.local/share/voxd/llamacpp_models/
-wget https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf?download=true
-```
-
-**Step 2:** Restart VOXD  
-VOXD automatically discovers all `.gguf` files in the models directory on startup and makes them available for selection.
-
-**Step 3:** Select in VOXD GUI  
-*AI Post-Processing → Provider: `llamacpp_server` → Model: `qwen2.5-3b-instruct`*
-
-#### **Recommended Models for AIPP**
-
-| Model | Size | RAM | Quality | Best For |
-|-------|------|-----|---------|----------|
-| **qwen2.5-3b-instruct** | 1.9GB | 3GB | Great | Default, high quality |
-| **qwen2.5-coder-1.5b** | 900MB | 2GB | Good | Code-focused tasks |
-
-
-### 🔧 Advanced Configuration
-
-Edit `~/.config/voxd/config.yaml`:
-
-```yaml
-# llama.cpp settings
-llamacpp_server_path: "llama.cpp/build/bin/llama-server"
-llamacpp_server_url: "http://localhost:8080"
-llamacpp_server_timeout: 30
-
-# Selected models per provider (automatically updated by VOXD)
-aipp_selected_models:
-  llamacpp_server: "qwen2.5-3b-instruct-q4_k_m"
-```
-
----
-
-### 🔑 Setting API Keys for the remote API providers
-
-For security reasons, be mindful where you store your API keys.  
-To use cloud AI providers, set the required API key(s) in your shell environment before running VOXD.  
-For example, add these lines to your `.bashrc`, `.zshrc`, or equivalent shell profile for convenience (change to your exact key accordingly):
-
-```sh
-# For OpenAI
-export OPENAI_API_KEY="sk-..."
-
-# For Anthropic
-export ANTHROPIC_API_KEY="..."
-
-# For xAI
-export XAI_API_KEY="..."
-```
-
-OpenRouter reads `OPENROUTER_API_KEY`, GigaChat reads `GIGACHAT_CREDENTIALS`.
-
-A tray or GUI started from the desktop (autostart, launcher) usually does not see variables exported in a shell profile.
-For that case paste the key in **Settings → AI processing → API key**: it is saved to `~/.config/voxd/keys.env`
-(plain text, readable only by you) and takes precedence over the environment variable. The same page shows where the
-current key comes from, or that none was found.
-
-### 🌐 Proxy for the cloud providers
-
-Requests to a cloud AIPP provider can go through a proxy: **Settings → AI processing → Proxy server**
-(config key `aipp_proxy`). HTTP and SOCKS are supported:
-
-```yaml
-aipp_proxy: "socks5://127.0.0.1:1080"          # or socks5://user:password@host:1080
-aipp_proxy: "http://user:password@host:3128"
-```
-
-- With `socks5://` host names are resolved by the proxy, not by the local DNS.
-- SOCKS needs the `PySocks` Python package (a dependency of VOXD; `pip install PySocks` on an older install).
-- Local providers (`llamacpp_server`, `ollama`, an `openai_compatible` server on localhost) are never proxied.
-  GigaChat does not use this setting.
-- **Test connection** on the same page shows whether the provider is reachable with the current setting.
-
-**Note:**  
-If an API key is missing, the respective cloud-based AIPP provider will (surprise, surprise) not work.
-
----
-
-## 🩺 Troubleshooting cheatsheet
-
-Note: As one may expect, the app is not completely immune to very noisy environments :) especially if you are not the best speaker out there.  
-
-| Symptom                            | Likely cause / fix                                                                                             |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| *Getting randomly [BLANK_AUDIO], no transcript, or very poor transcript*    | Most likely: too high mic volume (clipping & distortions) VOXD will try to set your microphone optimally (configurable), but anyway check if input volume is not > 45%.
-| *Press hotkey, nothing happens*    | Troubleshoot with this command: `gnome-terminal -- bash -c "voxd --trigger-record; read -p 'Press Enter...'"` |
-| *Transcript printed but not typed* | Wayland: `ydotool` not installed or user not in `input` group → run `setup_ydotool.sh`, relog.                 |
-| *"whisper-cli not found"*          | Build failed - rerun `./setup.sh` and check any diagnostic output.                                                      |
-| *Mic not recording*                | Verify in system settings: **input device available**? / **active**? / **not muted**?                                        |
-| Clipboard empty                    | ensure `xclip` or `wl-copy`  present (re-run `setup.sh`).                                |
-| *Non-ASCII (Cyrillic, accents, emoji) types as garbage like `   -б  б    ю`* | ydotool/xdotool emulate physical keystrokes via the active keyboard layout, which silently drops keys with no keysym. VOXD ≥ this revision auto-routes such text through the clipboard (`paste_unicode: true`). If you somehow turned it off, re-enable it in `~/.config/voxd/config.yaml`. |
-| *Paste shortcut goes nowhere*      | The focused app may want plain `Ctrl+V` instead of `Ctrl+Shift+V` — set `ctrl_v_paste: true`.                |
-| *Clipboard ends up containing the transcript instead of what I had copied* | Set `paste_preserve_clipboard: true` (default since this revision) — VOXD snapshots and restores your clipboard around paste. Increase `paste_restore_delay_ms` if a slow editor still loses content. |
-
-### Audio troubleshooting
-
-- List devices: `python -m sounddevice` (check that a device named "pulse" exists on modern systems).
-- Prefer PulseAudio/PipeWire: set in `~/.config/voxd/config.yaml`:
-
-```yaml
-audio_prefer_pulse: true
-audio_input_device: "pulse"   # or a specific device name or index
-```
-
-- If no `pulse` device:
-  - Debian/Ubuntu: `sudo apt install alsa-plugins pavucontrol` (ensure `pulseaudio` or `pipewire-pulse` is active)
-  - Fedora/openSUSE: `sudo dnf install alsa-plugins-pulseaudio pavucontrol` (ensure `pipewire-pulseaudio` is active)
-  - Arch: `sudo pacman -S alsa-plugins pipewire-pulse pavucontrol`
-
-- If 16 kHz fails on ALSA: VOXD will retry with the device default rate and with `pulse` when available.
-
----
-
-## 🛠 Development
-
-The full `./setup.sh` is the canonical install (system deps + venv + `whisper.cpp` + ydotool wiring). For a lightweight loop where you only need the Python side and a working GUI/CLI, two helpers live at the repo root:
+### Gentoo
 
 ```bash
-./dev-gui.sh                 # (re)create .venv, editable-install voxd, launch --gui
-./dev-gui.sh --rebuild       # nuke and recreate .venv (use after distro upgrades break it)
-./dev-gui.sh --no-run        # only set up the venv
-./dev-gui.sh -- --tray       # forward args to voxd (here: launch tray instead)
-
-./add-hf-model.sh <hf-repo> <local-name> [--quantize q5_0|q8_0]
-                             # convert a HuggingFace Whisper checkpoint to GGML
-                             # and drop it into ~/.local/share/voxd/models/
+eselect repository add badger git https://github.com/deepbadger/gentoo-overlay.git
+emerge --sync badger
+emerge app-accessibility/phonotype        # USE=gigachat adds the GigaChat provider
+gpasswd -a "$USER" input                  # ydotoold needs /dev/uinput; log in again
 ```
 
-`dev-gui.sh` does **not** build `whisper.cpp` or install system tools — for that, run `./setup.sh` once. On first launch the GUI will offer to build `whisper-cli` if it can't find one. The script auto-detects a broken `.venv` (e.g. dangling symlinks left by an old `uv` install) and rebuilds it.
-
-Tests use isolated XDG dirs and stubbed audio/clipboard backends:
+The package does not ship the recognition binaries. Build them once from a checkout of
+this repository (they are linked into `~/.local/bin`):
 
 ```bash
-.venv/bin/python -m pytest          # full suite
-.venv/bin/python -m pytest -k typer # only the typer tests
+./setup.sh --gpu=cuda --no-venv     # or --gpu (auto-detect), or no flag for CPU
 ```
 
-### Cutting a release
+### From source (any distribution)
 
-`release.sh` tags a release and lets GitHub CI build & publish it in one step:
+Needs `git`, `cmake`, a C++ compiler, Python 3.12+, PortAudio, `ffmpeg`, and
+`ydotool` (Wayland) or `xdotool` (X11) plus a clipboard tool (`wl-clipboard`, `xclip`).
 
 ```bash
-./release.sh 1.5.0            # bump pyproject + commit, push branch, tag v1.5.0, trigger CI
-./release.sh 1.5.0-rc1        # pre-release suffix → published as a GitHub prerelease
-./release.sh 1.5.0 --no-bump  # don't touch pyproject.toml; tag the current commit as-is
-./release.sh 1.5.0 --watch    # also follow the CI run (needs the gh CLI)
-./release.sh 1.5.0 --dry-run  # print the steps without touching git
+git clone https://github.com/deepbadger/phonotype.git && cd phonotype
+./setup.sh                 # builds whisper.cpp and creates .venv
+.venv/bin/phonotype --tray
 ```
 
-By default it bumps `version` in `pyproject.toml` to the release version and
-commits it (`chore(release): v1.5.0`) so the tagged commit records the version;
-pass `--no-bump` to skip that. It refuses to run on a dirty tree (override with
-`--allow-dirty`) or if the tag already exists. Pushing the `v*` tag triggers
-[`release-packages.yml`](.github/workflows/release-packages.yml), which builds the
-deb/rpm/archlinux packages + Python sdist and creates the GitHub Release. CI also
-overwrites `pyproject.toml`'s version from the tag during the build, so the tag is
-the ultimate source of truth. You can still trigger a build by hand from the
-Actions tab (`workflow_dispatch`).
+### Coming from VOXD
 
----
+On first start Phonotype imports `~/.config/voxd` (settings, API keys) and
+`~/.local/share/voxd` (models are hard-linked, so they take no extra space). The old
+directories are left untouched and can be deleted afterwards. Two things have to be
+changed by hand:
 
-## 📜 License & Credits
+- the global hotkey command: `voxd --trigger-record` → `phonotype --trigger-record`;
+- autostart: remove the `voxd-tray` service and add `phonotype-tray` (below).
 
-* VOXD – © 2025 Jakov Ivkovic – **MIT** license (see [`LICENSE`](LICENSE)). Logo and brand assets: see [`ASSETS_LICENSE`](ASSETS_LICENSE). Trademarks: see [`TRADEMARKS.md`](TRADEMARKS.md).
-* Speech engine powered by [**ggml-org/whisper.cpp**](https://github.com/ggml-org/whisper.cpp) (MIT) and OpenAI Whisper models (MIT).
-* Auto-typing/pasting powered by [**ReimuNotMoe/ydotool**](https://github.com/ReimuNotMoe/ydotool) (AGPLv3).
-* Transcript post-processing powered by [**ggml-org/llama.cpp**](https://github.com/ggml-org/llama.cpp) (MIT)
+Flux mode, the main window (`--gui`) and the built-in llama.cpp server are gone; a
+config that still selects `llamacpp_server` falls back to `ollama`.
 
----
+## Getting started
 
-## 🗑️  Removal / Uninstall
+1. **Bind a global hotkey** in your desktop settings to:
+   ```
+   bash -c 'phonotype --trigger-record'
+   ```
+2. **Start the tray**: `phonotype --tray`. To start it with the session:
+   ```bash
+   # OpenRC user services
+   rc-update --user add phonotype-ydotoold default
+   rc-update --user add phonotype-tray default
+   # or, with systemd: phonotype --autostart true
+   ```
+3. **Get a speech model**: tray menu → *Model* → *Manage models…*, pick one and press
+   *Download and use*.
+4. Press the hotkey, speak, press it again.
 
+## Speech models
 
-### 1. Package install (deb/rpm/arch)
-If VOXD was installed via a native package:
-
-- **Ubuntu/Debian**
-```bash
-sudo apt remove voxd
-```
-
-- **Fedora**
-```bash
-sudo dnf remove -y voxd
-```
-
-- **openSUSE**
-```bash
-sudo zypper --non-interactive remove voxd
-```
-
-- **Arch**
-```bash
-sudo pacman -R voxd
-```
-
-Note: This removes system files (e.g., under `/opt/voxd` and `/usr/bin/voxd`). User-level data (models, config, logs) remain. See "Optional runtime clean-up" below to remove those.
-
-
-
-### 2. Repo-clone install (`./setup.sh`)
-If you cloned this repository and ran `./setup.sh` inside it, just run the uninstall.sh script in the repo folder:
+Settings → **Models** lists what is on disk (engine, size, *Use* / *Delete*) and a
+catalogue to download from. The tray's *Model* submenu switches between installed
+models with one click. The same from a terminal:
 
 ```bash
-# From inside the repo folder
-./uninstall.sh
+phonotype-model list
+phonotype-model install parakeet-tdt-0.6b-v3-q8_0
+phonotype-model use parakeet-tdt-0.6b-v3-q8_0      # also selects the engine
+phonotype-model remove tiny
 ```
 
+Two engines, chosen by the model you activate (`asr_engine` in the config):
 
-### 3. pipx install
-If voxd was installed through **pipx** (either directly or via the prompt at the end of `setup.sh`):
+- **Parakeet** (`parakeet-tdt-0.6b-v3`, 25 European languages incl. Russian) — detects
+  the language itself, writes punctuation, does not invent text on silence, and is
+  several times faster on short phrases. Variants: f16 (1.3 GB), `-q8_0`, `-q4_k`.
+- **Whisper** — any `ggml-*.bin` model, 99 languages; set `language` (or `auto`).
+
+Any valid whisper.cpp GGML file dropped into `~/.local/share/phonotype/models/` shows
+up automatically. `./add-hf-model.sh <hf-repo> <name> [--quantize q5_0]` converts a
+HuggingFace Whisper checkpoint (for example a language-specific fine-tune).
+
+To compare engines on your own recordings: `tools/bench_asr.py`.
+
+## AI post-processing
+
+Optional: the transcript is sent to an LLM with a prompt before it is typed. Everything
+is on Settings → **AI processing**; the tray menu switches it on and off and picks the
+prompt.
+
+- **Providers**: `openrouter`, `openai`, `anthropic`, `xai`, `gigachat`,
+  `openai_compatible` (your own endpoint), and `ollama` on localhost.
+- **API key**: paste it in the settings (stored in `~/.config/phonotype/keys.env`,
+  mode 0600) or export the provider's variable (`OPENROUTER_API_KEY`, `OPENAI_API_KEY`,
+  `ANTHROPIC_API_KEY`, `XAI_API_KEY`, `GIGACHAT_CREDENTIALS`). A tray started by the
+  session usually does not see variables from a shell profile. The page shows where
+  the current key comes from.
+- **Proxy**: `socks5://host:1080` or `http://user:password@host:3128`
+  (`aipp_proxy`). With SOCKS5 host names are resolved by the proxy. Local endpoints
+  and GigaChat are never proxied. *Test connection* checks the route.
+- **Prompts**: four slots. The shipped ones turn a dictation into a request for
+  another LLM — *clean up the request*, *task statement*, *instruction for a coding
+  agent*. They tell the model to rewrite, not to answer.
+- **Temperature**: `aipp_temperature`, 0.2 by default.
+
+## Configuration
+
+Settings are edited in the settings window and stored in
+`~/.config/phonotype/config.yaml`; data (models, recordings, logs, metrics) lives in
+`~/.local/share/phonotype/`. Useful keys:
+
+| Key | Meaning |
+|---|---|
+| `asr_engine` | `whisper` or `parakeet` |
+| `language` | Whisper language (ISO 639-1 or `auto`); ignored by Parakeet |
+| `whisper_gpu_enabled`, `whisper_gpu_device`, `whisper_vram_check` | GPU use (both engines) |
+| `typing_delay`, `paste_unicode`, `ctrl_v_paste` | how the text reaches the window |
+| `save_recordings` | keep the audio of every dictation |
+| `aipp_*` | AI post-processing |
+
+Environment overrides for development: `PHONOTYPE_WC_BIN`, `PHONOTYPE_PARAKEET_BIN`,
+`PHONOTYPE_MODEL_PATH`, `PHONOTYPE_PARAKEET_MODEL_PATH`.
+
+## Command line
 
 ```bash
-pipx uninstall voxd
+phonotype --tray                 # the application
+phonotype --trigger-record       # start/stop recording in the running instance (hotkey)
+phonotype --diagnose             # mode, audio devices, ydotool, GPU build
+phonotype --setup                # per-user setup: default model, launchers
+phonotype --version
+phonotype                        # interactive CLI ('h' for commands); --rh, --transcribe, --aipp …
 ```
 
----
+## Troubleshooting
 
-Enjoy seamless voice-typing on Linux - and if you build something cool on top, open a PR or say hi!
+| Symptom | Likely cause |
+|---|---|
+| Hotkey does nothing | Phonotype is not running, or the hotkey still calls `voxd`. Run `phonotype --trigger-record` in a terminal. |
+| Text is recognised but not typed | Wayland: `ydotoold` is not running or you are not in the `input` group. `phonotype --diagnose` shows the daemon state. |
+| Empty or poor transcript | Microphone level too high (clipping) or the wrong input device — Settings → Audio. |
+| Recognition is slow | GPU not used: `phonotype --diagnose` shows whether `whisper-cli` was built with a GPU backend; a desktop that has eaten the VRAM forces the CPU. |
+| "No model" | Download one on Settings → Models. Parakeet also needs `parakeet-cli` on `PATH` (`./setup.sh`). |
+| AI processing returns the raw text | Missing key or unreachable provider — see the hint under *API key* and use *Test connection*; errors go to `~/.local/share/phonotype/logs/`. |
+
+## Development
+
+```bash
+./setup.sh                        # whisper.cpp + .venv with an editable install
+.venv/bin/pip install pytest
+.venv/bin/pytest                  # the suite stubs audio, clipboard and the recogniser
+./release.sh 2.1.0                # bump pyproject.toml, tag, push → GitHub release
+```
+
+Layout: `src/phonotype/core` (recorder, transcriber, AI processing, config),
+`tray/` and `gui/settings_window.py` (interface), `cli/`, `models.py` (catalogue and
+inventory), `paths.py` (all filesystem look-ups), `migrate.py` (import from VOXD).
+
+## License
+
+MIT, see [LICENSE](LICENSE). Based on VOXD © 2025 Jakov Ivkovic; third-party notices
+are in [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES). The icons are original to
+Phonotype (`tools/make_icons.py`).

@@ -2,7 +2,7 @@ name: gigachat-wheels-bundle
 
 # Собирает оффлайн-bundle колёс langchain-gigachat и его транзитивных
 # зависимостей под все поддерживаемые (Python × arch) комбинации
-# Gentoo-ебилда. Загружает архив voxd-<version>-gigachat-wheels.tar.gz
+# Gentoo-ебилда. Загружает архив phonotype-<version>-gigachat-wheels.tar.gz
 # в GitHub-релиз — оттуда его забирает SRC_URI ебилда при USE=gigachat.
 
 on:
@@ -110,15 +110,15 @@ jobs:
           echo "Bundle contents:"
           cat wheels/MANIFEST.txt
           # Bundle-имя выровнено с SRC_URI ебилда.
-          tar czf "voxd-${VERSION}-gigachat-wheels.tar.gz" wheels
-          ls -la voxd-*-gigachat-wheels.tar.gz
-          sha512sum voxd-*-gigachat-wheels.tar.gz
-          b2sum  voxd-*-gigachat-wheels.tar.gz
+          tar czf "phonotype-${VERSION}-gigachat-wheels.tar.gz" wheels
+          ls -la phonotype-*-gigachat-wheels.tar.gz
+          sha512sum phonotype-*-gigachat-wheels.tar.gz
+          b2sum  phonotype-*-gigachat-wheels.tar.gz
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
-          files: voxd-*-gigachat-wheels.tar.gz
+          files: phonotype-*-gigachat-wheels.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

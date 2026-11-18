@@ -8,7 +8,7 @@ def test_parse_bool_true_false(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
 
     # Import module fresh
-    import voxd.__main__ as main_mod
+    import phonotype.__main__ as main_mod
     importlib.reload(main_mod)
 
     assert main_mod._parse_bool("true") is True
@@ -29,7 +29,7 @@ def test_autostart_xdg_fallback_enable_disable(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
     monkeypatch.setenv("HOME", str(tmp_path))
 
-    import voxd.__main__ as main_mod
+    import phonotype.__main__ as main_mod
     importlib.reload(main_mod)
 
     def fake_run(args, **kwargs):
@@ -43,9 +43,9 @@ def test_autostart_xdg_fallback_enable_disable(monkeypatch, tmp_path):
 
     rc_en = main_mod._handle_autostart("true")
     assert rc_en == 0
-    xdg_path = (tmp_path / ".config" / "autostart" / "voxd-tray.desktop")
+    xdg_path = (tmp_path / ".config" / "autostart" / "phonotype-tray.desktop")
     assert xdg_path.exists()
-    assert "Exec=voxd --tray" in xdg_path.read_text()
+    assert "Exec=phonotype --tray" in xdg_path.read_text()
 
     rc_dis = main_mod._handle_autostart("false")
     assert rc_dis == 0
@@ -57,7 +57,7 @@ def test_autostart_systemd_enable_disable(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
     monkeypatch.setenv("HOME", str(tmp_path))
 
-    import voxd.__main__ as main_mod
+    import phonotype.__main__ as main_mod
     importlib.reload(main_mod)
 
     state = {"enabled": False, "active": False}

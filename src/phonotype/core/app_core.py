@@ -1,0 +1,531 @@
+# pyright: reportMissingImports=false
+from PyQt6.QtCore import QThread, pyqtSignal, Qt  # type: ignore
+from PyQt6.QtWidgets import (  # type: ignore
+    QDialog, QVBoxLayout, QPushButton, QFileDialog, QMessageBox,
+    QGroupBox, QHBoxLayout, QCheckBox, QComboBox, QLineEdit, QLabel,
+    QTextEdit, QDialogButtonBox, QRadioButton, QGridLayout, QLayout,
+    QWidget
+)
+import yaml
+from phonotype.core.aipp import get_final_text
+from phonotype.core.transcriber import WhisperTranscriber  # type: ignore
+from phonotype.utils.languages import search_languages, code_to_name, normalize_lang_code, is_valid_lang
+
+
+# Shared dark theme stylesheet for dialogs.
+# Applied at QDialog level so descendants (labels, inputs, dropdowns) inherit
+# explicit colors instead of falling back to the system palette, which on some
+# desktop themes renders dark text on dark backgrounds (i.e. invisible).
+DARK_DIALOG_QSS = """
+QDialog, QWidget#phonotypeDialogContent {
+    background-color: #2e2e2e;
+    color: white;
+}
+QLabel, QCheckBox, QRadioButton, QGroupBox {
+    color: white;
+    background-color: transparent;
+}
+QGroupBox {
+    border: 1px solid #555;
+    border-radius: 4px;
+    margin-top: 8px;
+    padding-top: 6px;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 8px;
+    padding: 0 4px;
+}
+QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+    background-color: #1e1e1e;
+    color: white;
+    border: 1px solid #555;
+    border-radius: 3px;
+    padding: 2px 4px;
+    selection-background-color: #FF4500;
+    selection-color: white;
+}
+QComboBox QAbstractItemView {
+    background-color: #1e1e1e;
+    color: white;
+    selection-background-color: #FF4500;
+    selection-color: white;
+}
+QPushButton {
+    background-color: #444;
+    color: white;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 4px 10px;
+}
+QPushButton:hover {
+    background-color: #555;
+}
+QPushButton:pressed {
+    background-color: #333;
+}
+QScrollArea, QScrollArea > QWidget > QWidget {
+    background-color: #2e2e2e;
+    color: white;
+}
+"""
+
+class CoreProcessThread(QThread):
+    finished = pyqtSignal(str)
+    status_changed = pyqtSignal(str)
+    # Emitted once per transcription: a human-readable reason when the GPU was
+    # enabled but the run fell back to CPU (VRAM exhausted), or "" when there
+    # is nothing to report — the empty emit lets the UI re-arm its
+    # "already notified" state once the GPU works again.
+    gpu_note = pyqtSignal(str)
+
+
+    def __init__(self, cfg, logger):
+        super().__init__()
+        self.cfg = cfg
+        self.logger = logger
+        self.should_stop = False
+
+    def stop_recording(self):
+        self.should_stop = True
+
+    def run(self):
+        from phonotype.core.recorder import AudioRecorder
+        from phonotype.core.typer import SimulatedTyper
+        from phonotype.core.clipboard import ClipboardManager
+        from time import time
+        from datetime import datetime
+        import psutil
+
+        recorder = AudioRecorder()
+        # Keep the audio in RECORDINGS_DIR (and don't let the transcriber
+        # delete it) when save_recordings is on — same behaviour as the CLI.
+        preserve = bool(getattr(self.cfg, "data", {}).get("save_recordings", False))
+
+        # Ensure whisper-cli exists – attempt auto-build when missing
+        from phonotype.utils.whisper_auto import ensure_whisper_cli  # local import to avoid GUI deps in headless tests
+
+        try:
+            transcriber = WhisperTranscriber(
+                model_path=self.cfg.whisper_model_path,
+                binary_path=self.cfg.whisper_binary,
+                language=getattr(self.cfg, "language", "en"),
+                delete_input=not preserve,
+            )
+        except FileNotFoundError as e:
+            # Building whisper-cli can't help a missing parakeet-cli/model.
+            if str(self.cfg.data.get("asr_engine", "whisper")).strip().lower() == "parakeet":
+                from phonotype.utils.libw import verr
+                verr(f"[app_core] {e}")
+                self.status_changed.emit("No model")
+                self.finished.emit("")
+                return
+            # Try to build on the fly (GUI prompt)
+            if ensure_whisper_cli("gui") is None:
+                # User declined or build failed – abort gracefully
+                self.status_changed.emit("Phonotype")
+                self.finished.emit("")
+                return
+            transcriber = WhisperTranscriber(
+                model_path=self.cfg.whisper_model_path,
+                binary_path=self.cfg.whisper_binary,
+                language=getattr(self.cfg, "language", "en"),
+                delete_input=not preserve,
+            )
+        typer = SimulatedTyper(delay=self.cfg.typing_delay, start_delay=self.cfg.typing_start_delay, cfg=self.cfg)
+        clipboard = ClipboardManager()
+
+        # ── Recording ---------------------------------------------------
+        rec_start_dt = datetime.now()
+        try:
+            recorder.start_recording()
+        except Exception as e:
+            # No usable audio input device — report and abort gracefully
+            # instead of letting the exception crash the whole app.
+            from phonotype.utils.libw import verr
+            verr(f"[app_core] Recording failed: {e}")
+            self.status_changed.emit("No mic")
+            self.finished.emit("")
+            return
+        while not self.should_stop:
+            self.msleep(100)
+        rec_end_dt = datetime.now()
+
+        self.status_changed.emit("Transcribing")
+        try:
+            rec_path = recorder.stop_recording(preserve=preserve)
+        except Exception as e:
+            from phonotype.utils.libw import verr
+            verr(f"[app_core] Could not finalize recording: {e}")
+            self.status_changed.emit("Phonotype")
+            self.finished.emit("")
+            return
+
+        # ── Transcription ----------------------------------------------
+        trans_start_ts = time()
+        tscript, _ = transcriber.transcribe(rec_path)
+        trans_end_ts = time()
+        self.gpu_note.emit(getattr(transcriber, "last_gpu_note", None) or "")
+        if not tscript:
+            self.finished.emit("")
+            return
+
+        # --- Apply AIPP if enabled ---
+        aipp_start_ts = aipp_end_ts = None
+        final_text = get_final_text(tscript, self.cfg)
+        if self.cfg.aipp_enabled and final_text and final_text != tscript:
+            aipp_start_ts = time()
+            # get_final_text already ran; so timing is approximated. We skip precise.
+            aipp_end_ts = aipp_start_ts  # zero duration placeholder due to prior exec
+
+        # === Logging ------------------------------------------------------
+        try:
+            if self.cfg.aipp_enabled:
+                # Log both original and, if different, AIPP output
+                self.logger.log_entry(f"[original] {tscript}")
+                if final_text and final_text != tscript:
+                    self.logger.log_entry(f"[aipp] {final_text}")
+            else:
+                # AIPP disabled → keep legacy single-line behaviour
+                self.logger.log_entry(tscript)
+        except Exception:
+            pass  # logging failures should never crash the thread
+
+        # Copy to clipboard unless the typer is going to route the text
+        # through a paste shortcut (delay <= 0 OR non-ASCII auto-paste). In
+        # those cases _paste needs to read & restore the user's clipboard,
+        # so we must NOT pre-overwrite it with the transcript here.
+        typing_will_paste = self.cfg.typing and typer.will_paste(final_text or "")
+
+        if not typing_will_paste and final_text:
+            clipboard.copy(final_text)
+
+        if self.cfg.typing and final_text:
+            self.status_changed.emit("Typing")
+            try:
+                typer.type(final_text)
+            except Exception as e:
+                print(f"[core] Typing failed: {e}")
+            print()
+
+        # ── Accuracy rating (GUI prompt handled in main thread) ---------
+        usr_trans_acc = None  # Will be updated by the GUI after the run
+
+        # ── Performance logging ---------------------------------------
+        if self.cfg.perf_collect:
+            from pathlib import Path as _P
+            from phonotype.utils.performance import write_perf_entry
+
+            perf_entry = {
+                "date": rec_start_dt.strftime("%Y-%m-%d"),
+                "rec_start_time": rec_start_dt.strftime("%H:%M:%S"),
+                "rec_end_time": rec_end_dt.strftime("%H:%M:%S"),
+                "rec_dur": (rec_end_dt - rec_start_dt).total_seconds(),
+                "trans_start_time": datetime.fromtimestamp(trans_start_ts).strftime("%H:%M:%S"),
+                "trans_end_time": datetime.fromtimestamp(trans_end_ts).strftime("%H:%M:%S"),
+                "trans_dur": trans_end_ts - trans_start_ts,
+                "trans_eff": (trans_end_ts - trans_start_ts) / max(len(tscript), 1),
+                "transcript": tscript,
+                "usr_trans_acc": usr_trans_acc,
+                "trans_model": _P(transcriber.model_path).name,
+                "aipp_start_time": datetime.fromtimestamp(aipp_start_ts).strftime("%H:%M:%S") if aipp_start_ts else None,
+                "aipp_end_time": datetime.fromtimestamp(aipp_end_ts).strftime("%H:%M:%S") if aipp_end_ts else None,
+                "aipp_dur": (aipp_end_ts - aipp_start_ts) if aipp_start_ts and aipp_end_ts else None,
+                "ai_model": self.cfg.aipp_model if self.cfg.aipp_enabled else None,
+                "ai_provider": self.cfg.aipp_provider if self.cfg.aipp_enabled else None,
+                "ai_prompt": self.cfg.aipp_active_prompt if self.cfg.aipp_enabled else None,
+                "ai_transcript": final_text if self.cfg.aipp_enabled else None,
+                "aipp_eff": ((aipp_end_ts - aipp_start_ts) / max(len(final_text), 1)) if self.cfg.aipp_enabled and aipp_start_ts and aipp_end_ts and final_text else None,
+                "sys_mem": psutil.virtual_memory().total,
+                "sys_cpu": psutil.cpu_freq().max,
+                "total_dur": (trans_end_ts - trans_start_ts) + (rec_end_dt - rec_start_dt).total_seconds()
+            }
+            write_perf_entry(perf_entry)
+
+        self.finished.emit(final_text)
+
+def session_log_dialog(parent, logger):
+    """Open a (modal) window that shows the current session log and offers
+    the user to save it via a native file-dialog.
+
+    Parameters
+    ----------
+    parent : QWidget | None
+        Parent for the dialog (can be *None* in tray mode).
+    logger : SessionLogger
+        Logger instance whose current entries should be displayed and offered
+        for saving.
+    """
+
+    log_view = QDialog(parent)
+    log_view.setWindowTitle("Session Log")
+    log_view.setMinimumSize(600, 400)
+    log_view.setStyleSheet(DARK_DIALOG_QSS)
+
+    vbox = QVBoxLayout(log_view)
+
+    text_area = QTextEdit()
+    text_area.setReadOnly(True)
+    text_area.setStyleSheet("background-color: #1e1e1e; color: white;")
+    if logger.entries:
+        text_area.setText("\n".join(logger.entries))
+    else:
+        text_area.setText("No entries logged yet.")
+    vbox.addWidget(text_area)
+
+    btn_box = QDialogButtonBox()
+    save_btn = btn_box.addButton("Save log…", QDialogButtonBox.ButtonRole.ActionRole)
+    close_btn = btn_box.addButton(QDialogButtonBox.StandardButton.Close)
+
+    save_btn.clicked.connect(lambda _=False: logger.save())
+    close_btn.clicked.connect(log_view.close)
+
+    vbox.addWidget(btn_box)
+
+    log_view.setLayout(vbox)
+    log_view.exec()
+
+    return log_view
+
+# ----------------------------------------------------------------------------
+#   Performance viewer dialog (shared between GUI & tray)
+# ----------------------------------------------------------------------------
+
+def show_performance_dialog(parent, cfg):
+    """Open the Performance window showing metrics for the last run."""
+
+    from phonotype.paths import DATA_DIR as _DATA_DIR
+    import csv
+    from pathlib import Path
+
+    dlg = QDialog(parent)
+    dlg.setWindowTitle("Performance")
+    dlg.setMinimumWidth(500)
+    dlg.setStyleSheet(DARK_DIALOG_QSS)
+
+    vbox = QVBoxLayout(dlg)
+
+    # --- Collect toggles (styled) -----------------------------------------
+    perf_widget = _create_styled_checkbox("Collect performance data", cfg.data.get("perf_collect", False))
+    perf_cb = perf_widget.checkbox_button  # type: ignore[attr-defined]
+
+    acc_widget = _create_styled_checkbox(
+        "Collect user transcript accuracy rating",
+        cfg.data.get("perf_accuracy_rating_collect", True),
+    )
+    acc_cb = acc_widget.checkbox_button  # type: ignore[attr-defined]
+
+    def on_perf_toggled(state: bool):
+        cfg.data["perf_collect"] = bool(state)
+        cfg.perf_collect = bool(state)
+        cfg.save()
+
+    def on_acc_toggled(state: bool):
+        cfg.data["perf_accuracy_rating_collect"] = bool(state)
+        cfg.perf_accuracy_rating_collect = bool(state)
+        cfg.save()
+
+    perf_cb.toggled.connect(on_perf_toggled)
+    acc_cb.toggled.connect(on_acc_toggled)
+
+    vbox.addWidget(perf_widget)
+    vbox.addWidget(acc_widget)
+
+    # --- Data ----------------------------------------------------------------
+    data_group = QGroupBox("Last run data")
+    grid = QGridLayout(data_group)
+    row_idx = 0
+
+    def _add(label, value, emphasize=False):
+        nonlocal row_idx
+        lbl = QLabel(f"{label}:")
+        val_lbl = QLabel(str(value) if value is not None else "")
+        if emphasize:
+            val_lbl.setStyleSheet("font-weight: bold;")
+        grid.addWidget(lbl, row_idx, 0)
+        grid.addWidget(val_lbl, row_idx, 1)
+        row_idx += 1
+
+    last_entry = None
+    csv_path = _DATA_DIR / "phonotype_perf_data.csv"
+    if cfg.perf_collect and csv_path.exists():
+        try:
+            with open(csv_path, "r", newline="") as f:
+                reader = csv.DictReader(f)
+                rows = list(reader)
+                if rows:
+                    last_entry = rows[-1]
+        except Exception:
+            last_entry = None
+
+    if last_entry:
+        from pathlib import Path as _P
+
+        # Fallback: if the CSV row missed the value use current cfg
+        trans_model_val = last_entry.get("trans_model") or _P(cfg.whisper_model_path).name
+
+        _add("date", last_entry.get("date"))
+        _add("rec_start_time", last_entry.get("rec_start_time"))
+        _add("trans_eff (s/char)", last_entry.get("trans_eff"), True)
+        _add("aipp_eff (s/char)", last_entry.get("aipp_eff"), True)
+        _add("usr_trans_acc (%)", last_entry.get("usr_trans_acc"))
+        _add("sys_mem", last_entry.get("sys_mem"))
+        _add("trans_model", trans_model_val)
+        _add("ai_provider", last_entry.get("ai_provider"))
+        _add("ai_model", last_entry.get("ai_model"))
+
+        def _short(key: str):
+            """Return first 20 chars of value with ellipsis."""
+            val = last_entry.get(key) or ""
+            return val[:20] + ("…" if len(val) > 20 else "")
+
+        def _length(key: str):
+            return len(last_entry.get(key) or "")
+
+        _add("transcript", _short("transcript"))
+        _add("ai_prompt (chars)", _length("ai_prompt"))
+        _add("ai_transcript (chars)", _length("ai_transcript"))
+    else:
+        notice = QLabel("The performance data for the last run in the current session. Toggle collect performance data ON to display the latest run performance.")
+        notice.setStyleSheet("color: gray; font-size: 8pt;")
+        vbox.addWidget(notice)
+
+    vbox.addWidget(data_group)
+
+    # --- Folder link --------------------------------------------------------
+    row = QHBoxLayout()
+    row.addWidget(QLabel("Any recorded performance data is found here:"))
+    open_btn = QPushButton("Open folder…")
+
+    def _open_folder():
+        from PyQt6.QtGui import QDesktopServices
+        from PyQt6.QtCore import QUrl
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(csv_path.parent)))
+
+    open_btn.clicked.connect(_open_folder)
+    row.addWidget(open_btn)
+    vbox.addLayout(row)
+
+    dlg.setLayout(vbox)
+    dlg.exec()
+
+# ----------------------------------------------------------------------------
+#   Language selector dialog (shared between GUI & tray)
+# ----------------------------------------------------------------------------
+
+def show_language_dialog(parent, cfg, modal=True):
+    dlg = QDialog(parent)
+    dlg.setWindowTitle("Language")
+    dlg.setMinimumWidth(320)
+    dlg.setStyleSheet(DARK_DIALOG_QSS)
+    layout = QVBoxLayout(dlg)
+
+    search = QLineEdit()
+    search.setPlaceholderText("Search languages…")
+    layout.addWidget(search)
+
+    combo = QComboBox()
+    combo.setEditable(False)
+    layout.addWidget(combo)
+
+    def _reload(q: str = ""):
+        items = search_languages(q)
+        combo.clear()
+        for code, name in items:
+            combo.addItem(f"{name} ({code})", userData=code)
+        cur = normalize_lang_code(cfg.data.get("language", "en"))
+        idx = next((i for i in range(combo.count()) if combo.itemData(i) == cur), -1)
+        combo.setCurrentIndex(idx if idx >= 0 else 0)
+
+    _reload("")
+    search.textChanged.connect(_reload)
+
+    btns = QDialogButtonBox()
+    set_btn = btns.addButton("Set language", QDialogButtonBox.ButtonRole.AcceptRole)
+    cancel_btn = btns.addButton(QDialogButtonBox.StandardButton.Cancel)
+    layout.addWidget(btns)
+
+    def _apply():
+        code = combo.currentData()
+        code = normalize_lang_code(code or "")
+        if not is_valid_lang(code):
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(dlg, "Invalid", f"Invalid language: {code}")
+            return
+        cfg.data["language"] = code
+        cfg.language = code  # type: ignore[attr-defined]
+        cfg.save()
+        dlg.accept()
+
+    set_btn.clicked.connect(_apply)
+    cancel_btn.clicked.connect(dlg.reject)
+
+    if modal:
+        dlg.exec()
+    else:
+        dlg.show()
+    return dlg
+
+# ----------------------------------------------------------------------------
+#   AIPP settings dialog (extracted from Options)
+# ----------------------------------------------------------------------------
+
+# ────────────────────────────────────────────────────────────────────────────
+#  Tiny helper   (styled QPushButton acting as a checkbox)
+# ---------------------------------------------------------------------------
+
+def _create_styled_checkbox(text: str, checked: bool = False) -> QWidget:
+    """Return a widget consisting of a styled, check-able QPushButton + label.
+
+    The button shows a green background + tick when checked, grey otherwise.
+    The returned widget exposes the *button* via attribute ``checkbox_button``
+    so callers can connect to its ``toggled`` signal.
+    """
+
+    btn = QPushButton()
+    btn.setCheckable(True)
+    btn.setChecked(checked)
+    btn.setFixedSize(20, 20)
+
+    def _update():
+        if btn.isChecked():
+            btn.setStyleSheet(
+                """
+                QPushButton {
+                    background-color: #E03D00;
+                    border: 2px solid #777;
+                    border-radius: 3px;
+                    color: white;
+                    font-weight: bold;
+                }
+                """
+            )
+            btn.setText("✓")
+        else:
+            btn.setStyleSheet(
+                """
+                QPushButton {
+                    background-color: #555;
+                    border: 2px solid #777;
+                    border-radius: 3px;
+                    color: white;
+                }
+                """
+            )
+            btn.setText("")
+
+    _update()
+    btn.toggled.connect(lambda _: _update())
+
+    container = QWidget()
+    layout = QHBoxLayout(container)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(6)
+    layout.addWidget(btn)
+    layout.addWidget(QLabel(text))
+    layout.addStretch(1)
+
+    # Expose the inner button to callers
+    container.checkbox_button = btn  # type: ignore[attr-defined]
+
+    return container

@@ -1,6 +1,6 @@
 
 def test_aipp_provider_validation_resets_invalid():
-    from voxd.core.config import AppConfig
+    from phonotype.core.config import AppConfig
     cfg = AppConfig()
     cfg.data["aipp_provider"] = "invalid"
     cfg._validate_aipp_config()
@@ -13,7 +13,7 @@ def test_aipp_models_backfill_for_new_provider():
     """A config that predates a provider (missing or blank entry) should get its
     default model list/selection seeded, not left empty — otherwise the GUI model
     dropdown is blank and unselectable."""
-    from voxd.core.config import AppConfig
+    from phonotype.core.config import AppConfig
     cfg = AppConfig()
     # Simulate an older config.yaml: openrouter absent, plus a stale empty entry.
     cfg.data["aipp_models"].pop("openrouter", None)
@@ -28,9 +28,9 @@ def test_aipp_models_backfill_for_new_provider():
 
 
 def test_removed_features_are_dropped_from_an_old_config():
-    """A config written by voxd 1.x still carries Flux and llama.cpp settings."""
+    """A config written by phonotype 1.x still carries Flux and llama.cpp settings."""
     import yaml
-    import voxd.core.config as C
+    import phonotype.core.config as C
     old = dict(C.DEFAULT_CONFIG, flux_min_silence_ms=500, llamacpp_server_url="http://localhost:8080",
                aipp_provider="llamacpp_server")
     old["aipp_models"] = dict(old["aipp_models"], llamacpp_server=["m"])

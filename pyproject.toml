@@ -3,11 +3,11 @@ requires = ["hatchling>=1.24"]
 build-backend = "hatchling.build"
 
 [project]
-name = "voxd"
-version = "1.7.0+mir.7"  # bump manually on releases (CI overwrites during release builds)
-description = "Voice-typing helper powered by whisper.cpp"
-authors = [{ name = "Jakov", email = "jakov.iv@proton.me" }]
-requires-python = ">=3.9"
+name = "phonotype"
+version = "2.0.0"  # bumped by release.sh
+description = "Voice typing for Linux: dictate into any app (whisper.cpp / Parakeet), with optional LLM clean-up"
+authors = [{ name = "Dmitry" }]  # based on VOXD by Jakov Ivkovic (MIT), see LICENSE
+requires-python = ">=3.12"
 dependencies = [
   "sounddevice>=0.5",
   "pyqt6>=6.9",
@@ -18,8 +18,7 @@ dependencies = [
   "numpy>=1.26",
   "requests>=2.28.0",
   "PySocks>=1.7",
-  "tqdm>=4.66",
-  "pyqtgraph>=0.13"
+  "tqdm>=4.66"
 ]
 
 [project.optional-dependencies]
@@ -28,18 +27,18 @@ gigachat = ["langchain-gigachat>=0.3"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-norecursedirs = ["llama.cpp","whisper.cpp","venv",".venv","build","dist"]
+norecursedirs = ["whisper.cpp","venv",".venv","build","dist"]
 
 [project.scripts]
-voxd = "voxd.__main__:main"
-voxd-model = "voxd.models:_cli"
+phonotype = "phonotype.__main__:main"
+phonotype-model = "phonotype.models:_cli"
 
 [tool.hatch.build]
 package-dir = "src"
-include = ["setup.sh","src/voxd/assets/*.png","src/voxd/defaults/*.yaml","launcher_setup.sh"]
+include = ["setup.sh","src/phonotype/assets/*.png","src/phonotype/defaults/*.yaml"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/voxd"]
+packages = ["src/phonotype"]
 
 [tool.hatch.build.targets.editable]
-packages = ["src/voxd"]
+packages = ["src/phonotype"]
