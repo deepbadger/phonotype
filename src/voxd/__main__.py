@@ -312,10 +312,7 @@ def main():
     # present and -h/--help is provided.
     # Mutually-exclusive launch mode flags (simpler UX)
     mode_group = parser.add_mutually_exclusive_group()
-    mode_group.add_argument("--gui", action="store_true", help="Launch VOXD in GUI mode")
     mode_group.add_argument("--tray", action="store_true", help="Launch VOXD tray-only mode (background)")
-    mode_group.add_argument("--flux", action="store_true", help="Launch VOXD VAD-triggered dictation mode")
-    mode_group.add_argument("--flux-tuner", action="store_true", help="Launch Flux Tuner (GUI)")
     parser.add_argument(
         "--setup",
         action="store_true",
@@ -387,7 +384,7 @@ def main():
     # ------------------------------------------------------------
     #         Top-level help handling (only when no sub-mode or QA)
     # ------------------------------------------------------------
-    if not any([args.gui, args.tray, args.flux, args.flux_tuner]) and not (unknown_flags & cli_flags):
+    if not args.tray and not (unknown_flags & cli_flags):
         if "-h" in unknown or "--help" in unknown:
             parser.print_help()
             # Show installed version
@@ -409,8 +406,6 @@ def main():
                 pass
             sys.exit(0)
 
-    # Implicit CLI mode if any CLI-specific flags are present without a mode
-    implied_cli = (not any([args.gui, args.tray, args.flux, args.flux_tuner]) and (unknown_flags & cli_flags))
 
     # If we're just the hotkey sender, dispatch and exit immediately
     if args.trigger_record:
@@ -432,17 +427,7 @@ def main():
         except Exception as e:
             print(f"[voxd] Failed to apply language override: {e}")
             sys.exit(2)
-    if args.gui:
-        mode = "gui"
-    elif args.tray:
-        mode = "tray"  # internal identifier for tray mode
-    elif args.flux:
-        mode = "flux"
-    elif args.flux_tuner:
-        mode = "flux_tuner"
-    else:
-        # Default to CLI when no explicit sub-mode selected
-        mode = "cli" if implied_cli or True else "cli"
+    mode = "tray" if args.tray else "cli"
 
     if args.diagnose:
         print(f"[Diagnose] Current mode: {mode}")
@@ -595,7 +580,7 @@ def main():
     # show shortcut hint
     print(f"""Note:
 - create a global {ORANGE}HOTKEY{RESET} shortcut (in your system) that runs {ORANGE}`bash -c 'voxd --trigger-record'`{RESET} (e.g. Super+Z)"
-- start hotkey-triggered voice-typing by running in terminal {ORANGE}'voxd --rh'{RESET}, or {ORANGE}'voxd --gui'{RESET}, or {ORANGE}'voxd --tray'{RESET}.
+- start hotkey-triggered voice-typing by running in terminal {ORANGE}'voxd --rh'{RESET} or {ORANGE}'voxd --tray'{RESET}.
 - advised: have VOXD always ready in the background, by enabling autostart: {ORANGE}`voxd --autostart true`{RESET}.
 - transcripts ALWAYS picked up into clipboard.
 """)
@@ -605,19 +590,9 @@ def main():
         from voxd.cli import cli_main as cli_main_mod
         sys.argv = [sys.argv[0]] + unknown
         cli_main_mod.main()
-    elif mode == "gui":
-        from voxd.gui.gui_main import main as gui_main
-        gui_main()
     elif mode == "tray":
         from voxd.tray.tray_main import main as tray_main
         tray_main()
-    elif mode == "flux":
-        from voxd.flux.flux_main import main as flux_main
-        sys.argv = [sys.argv[0]] + unknown
-        flux_main()
-    elif mode == "flux_tuner":
-        from voxd.flux.flux_tuner import main as flux_tuner_main
-        flux_tuner_main()
     else:
         print(f"[__main__] ❌ Unknown app_mode: {mode}")
         sys.exit(1)

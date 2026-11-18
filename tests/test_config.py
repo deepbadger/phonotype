@@ -5,7 +5,7 @@ def test_aipp_provider_validation_resets_invalid():
     cfg.data["aipp_provider"] = "invalid"
     cfg._validate_aipp_config()
     assert cfg.data["aipp_provider"] in (
-        "ollama", "openai", "openrouter", "anthropic", "xai", "llamacpp_server", "openai_compatible"
+        "ollama", "openai", "openrouter", "anthropic", "xai", "gigachat", "openai_compatible"
     )
 
 
@@ -27,14 +27,15 @@ def test_aipp_models_backfill_for_new_provider():
     assert cfg.data["aipp_selected_models"]["openai"]
 
 
-def test_llamacpp_status_flags_do_not_crash():
-    from voxd.core.config import AppConfig
-    cfg = AppConfig()
-    status = cfg.validate_llamacpp_setup()
-    assert {
-        "server_available",
-        "cli_available",
-        "default_model_available",
-    } <= set(status.keys())
-
-
+def test_removed_features_are_dropped_from_an_old_config():
+    """A config written by voxd 1.x still carries Flux and llama.cpp settings."""
+    import yaml
+    import voxd.core.config as C
+    old = dict(C.DEFAULT_CONFIG, flux_min_silence_ms=500, llamacpp_server_url="http://localhost:8080",
+               aipp_provider="llamacpp_server")
+    old["aipp_models"] = dict(old["aipp_models"], llamacpp_server=["m"])
+    C.CONFIG_PATH.write_text(yaml.safe_dump(old))
+    cfg = C.AppConfig()
+    assert not [k for k in cfg.data if k.startswith(("flux_", "llamacpp_"))]
+    assert cfg.data["aipp_provider"] == "ollama"
+    assert "llamacpp_server" not in cfg.data["aipp_models"]

@@ -38,7 +38,7 @@ from voxd.core.voxd_core import DARK_DIALOG_QSS
 from voxd.utils.languages import ISO_639_1, normalize_lang_code
 
 ENGINES = (("whisper", "Whisper"), ("parakeet", "Parakeet"))
-AIPP_PROVIDERS = ("llamacpp_server", "ollama", "openai", "openrouter", "anthropic",
+AIPP_PROVIDERS = ("ollama", "openai", "openrouter", "anthropic",
                   "xai", "gigachat", "openai_compatible")
 
 _WINDOW_QSS = DARK_DIALOG_QSS + """
@@ -549,10 +549,10 @@ class AippPage(SettingsPage):
                                    "Runs the active prompt over every transcript before typing it.")
         self.provider = self.choice(
             g, "aipp_provider", "Provider",
-            "llamacpp_server and ollama run on this computer; the others are cloud services.",
+            "ollama runs on this computer; the others are cloud services.",
             lambda cur: [(p, p) for p in AIPP_PROVIDERS] +
                         ([] if cur in AIPP_PROVIDERS or not cur else [(f"{cur} (configured)", cur)]),
-            default="llamacpp_server")
+            default="ollama")
         self.provider.currentIndexChanged.connect(lambda _=0: self._on_provider())
 
         # API key of a cloud provider (kept in keys.env, not in config.yaml)

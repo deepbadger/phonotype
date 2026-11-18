@@ -160,8 +160,6 @@ def run_aipp(text: str, cfg, prompt_key: str = None) -> str:
                 return text
             elif provider == "ollama":
                 return run_ollama_aipp(full_prompt, model)
-            elif provider == "llamacpp_server":
-                return run_llamacpp_server_aipp(full_prompt, model)
             elif provider == "openai":
                 return run_openai_aipp(full_prompt, model)
             elif provider == "openai_compatible":
@@ -283,39 +281,6 @@ def run_openrouter_aipp(prompt: str, model: str = "openai/gpt-4o-mini") -> str:
         return response.json()["choices"][0]["message"]["content"].strip()
     else:
         raise requests.RequestException(f"OpenRouter error {response.status_code}: {response.text}")
-
-
-def run_llamacpp_server_aipp(prompt: str, model: str = "gemma-3-270m") -> str:
-    """Use llama.cpp server API (OpenAI-compatible)."""
-    from voxd.core.config import get_config
-    from voxd.core.llama_server_manager import ensure_server_running
-    
-    cfg = get_config()
-    url = cfg.data.get("llamacpp_server_url", "http://localhost:8080")
-    timeout = cfg.data.get("llamacpp_server_timeout", 30)
-    
-    # Ensure server is running before making API calls
-    server_path = cfg.data.get("llamacpp_server_path", "")
-    model_path = cfg.get_llamacpp_model_path(model)
-    
-    if not ensure_server_running(server_path, model_path):
-        raise RuntimeError("Failed to start llama-server")
-    
-    response = requests.post(f"{url}/v1/chat/completions", json={
-        "model": model,  # Model name is mostly ignored by llama.cpp server
-        "messages": [{"role": "user", "content": prompt}],
-        "stream": False,
-        "max_tokens": 512,
-        "temperature": _temperature
-    }, timeout=timeout)
-    
-    if response.ok:
-        return response.json()["choices"][0]["message"]["content"].strip()
-    else:
-        raise requests.RequestException(f"llama.cpp server error {response.status_code}: {response.text}")
-
-
-## llamacpp_direct support removed
 
 
 _gigachat_clients: dict[tuple, object] = {}

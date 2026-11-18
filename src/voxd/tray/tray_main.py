@@ -13,7 +13,6 @@ from voxd.core.logger import SessionLogger
 from voxd.utils.ipc_server import start_ipc_server
 from voxd.core.voxd_core import (
     CoreProcessThread,
-    show_options_dialog,
     session_log_dialog,
     show_performance_dialog,
 )
@@ -253,9 +252,6 @@ class VoxdTrayApp(QObject):
             QSystemTrayIcon.MessageIcon.Warning,
             10_000,
         )
-
-    def show_options(self):
-        show_options_dialog(None, self.logger, cfg=self.cfg)
 
     def quit_app(self):
         print()

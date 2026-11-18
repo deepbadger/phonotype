@@ -8,7 +8,7 @@ try:
     from importlib.resources import files
 except Exception:  # Python <3.9 (e.g., openSUSE Leap)
     from importlib_resources import files  # type: ignore
-from voxd.paths import resolve_whisper_binary, resolve_model_path, DATA_DIR, resolve_llamacpp_server, LLAMACPP_MODELS_DIR  # <-- add this import
+from voxd.paths import resolve_whisper_binary, resolve_model_path, DATA_DIR  # <-- add this import
 from voxd.utils.languages import ISO_639_1, normalize_lang_code, is_valid_lang
 
 # ---------------------------------------------------------------------------
@@ -61,6 +61,9 @@ LEGACY_PROMPTS = {
     "prompt1": 'Interpret the following text to the best of your ability as a C programming language code and output it as such. Do not add any additional text or commentary. Just the corresponding C code.',
     "prompt2": 'Interpret the following text to the best of your ability as a Python programming language code and output it as such. Do not add any additional text or commentary. Just the corresponding Python code.',
 }
+
+AIPP_PROVIDERS = ("ollama", "openai", "openrouter", "anthropic", "xai", "gigachat", "openai_compatible")
+OBSOLETE_PREFIXES = ("flux_", "llamacpp_")
 
 DEFAULT_CONFIG = {
     "perf_collect": False,
@@ -148,49 +151,13 @@ DEFAULT_CONFIG = {
         "Like and subscribe.",
     ],
 
-    # --- Flux (VAD-driven continuous dictation) ------------------------------
-    # Defaults are conservative and CPU-light; Flux VAD is built-in
-    # and requires no extra dependencies.
-    "flux_min_silence_ms": 500,   # pause to finalize an utterance
-    "flux_min_speech_ms": 200,    # minimum speech before opening a segment
-    "flux_pre_roll_ms": 180,      # prepend audio before detection to avoid clipping leading phonemes
-    # Flux VAD thresholds (margins above noise floor)
-    "flux_energy_start_margin_db": 6.0,
-    "flux_energy_keep_margin_db": 3.0,
-    # Flux VAD absolute bounds (dBFS)
-    "flux_energy_abs_start_db": -33.0,
-    "flux_energy_abs_keep_db": -37.0,
-    # Legacy hysteresis thresholds (unused but kept for config compatibility)
-    "flux_start_threshold": 0.6,
-    "flux_end_threshold": 0.4,
-    # Energy absolute thresholds (optional, normalized 0..1)
-    "flux_energy_use_absolute": False,
-    "flux_energy_start_p": 0.55,
-    "flux_energy_keep_p": 0.50,
-    # Segment smoothing
-    "flux_post_roll_ms": 150,     # keep this much trailing silence
-    "flux_min_segment_ms": 600,   # drop segments shorter than this
-    "flux_cooldown_ms": 250,      # wait this long after closing before reopening
-    "flux_min_rms_dbfs": -45.0,   # skip segment if overall RMS below this
-
-    # Flux monitor and calibration
-    "flux_monitor_enabled": True,
-    "flux_monitor_energy_window_s": 10,
-    "flux_monitor_spectrum_floor_db": -85,
-    "flux_calibration_sec": 5,
-    # Noise tracking and suppression
-    "flux_noise_ema": 0.05,           # EMA for noise floor (energy)
-    "flux_noise_spec_ema": 0.02,      # EMA for spectral noise baseline
-    "flux_noise_subtract_enabled": True,
-
-    # --- ✨ AIPP (AI post-processing) ------------------------------------------
+    # --- AIPP (AI post-processing) ---------------------------------------------
     "aipp_enabled": False,
-    "aipp_provider": "llamacpp_server",           # ollama / openai / openrouter / anthropic / xai / gigachat / llamacpp_server / openai_compatible
+    "aipp_provider": "ollama",                    # ollama / openai / openrouter / anthropic / xai / gigachat / openai_compatible
     "aipp_active_prompt": "default",
 
     # New: List of models per provider
     "aipp_models": {
-        "llamacpp_server": ["gemma-3-270m"],
         "ollama": ["llama3.2:latest", "mistral:latest", "gemma3:latest", "qwen2.5-coder:1.5b"],
         "openai": ["gpt-4o-mini-2024-07-18"],
         "openrouter": ["openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet", "meta-llama/llama-3.1-8b-instruct"],
@@ -202,7 +169,6 @@ DEFAULT_CONFIG = {
 
     # New: Selected model per provider
     "aipp_selected_models": {
-        "llamacpp_server": "qwen2.5-3b-instruct-q4_k_m",
         "ollama": "gemma3:latest",
         "openai": "gpt-4o-mini-2024-07-18",
         "openrouter": "openai/gpt-4o-mini",
@@ -221,12 +187,6 @@ DEFAULT_CONFIG = {
     "gigachat_scope": "GIGACHAT_API_PERS",         # GIGACHAT_API_PERS | GIGACHAT_API_CORP
     "gigachat_verify_ssl": True,                   # set False if Russian Trusted Root CA is missing
 
-    # llama.cpp settings
-    "llamacpp_server_path": "llama.cpp/build/bin/llama-server",
-    "llamacpp_cli_path": "llama.cpp/build/bin/llama-cli", 
-    "llamacpp_default_model": "llamacpp_models/qwen2.5-3b-instruct-q4_k_m.gguf",
-    "llamacpp_server_url": "http://localhost:8080",
-    "llamacpp_server_timeout": 30,
     
 
 
@@ -252,7 +212,6 @@ class AppConfig:
         self.data = DEFAULT_CONFIG.copy()
         self.load()
         self._validate_aipp_config()
-        self.update_available_llamacpp_models()
 
     def load(self):
         if CONFIG_PATH.exists():
@@ -277,31 +236,9 @@ class AppConfig:
             self.data["whisper_model_path"] = abs_model
             updated = True
 
-        # Also resolve llama.cpp paths if they exist
-        try:
-            abs_llama_server = str(resolve_llamacpp_server(self.data.get("llamacpp_server_path", "")))
-            if self.data.get("llamacpp_server_path") != abs_llama_server:
-                self.data["llamacpp_server_path"] = abs_llama_server
-                updated = True
-        except FileNotFoundError:
-            pass  # llama.cpp not installed yet
-
-        # Sanitize types: fix malformed llamacpp_server_timeout (e.g., "30n")
-        try:
-            tval = self.data.get("llamacpp_server_timeout", 30)
-            if isinstance(tval, str):
-                m = re.match(r"^\s*(\d+(?:\.\d+)?)", tval)
-                if m:
-                    num = m.group(1)
-                    self.data["llamacpp_server_timeout"] = float(num) if "." in num else int(num)
-                else:
-                    self.data["llamacpp_server_timeout"] = 30
-                updated = True
-            elif not isinstance(tval, (int, float)):
-                self.data["llamacpp_server_timeout"] = 30
-                updated = True
-        except Exception:
-            self.data["llamacpp_server_timeout"] = 30
+        # Drop settings of features that no longer exist (Flux, llama.cpp server)
+        for key in [k for k in self.data if k.startswith(OBSOLETE_PREFIXES)]:
+            del self.data[key]
             updated = True
 
         # Normalize and validate language
@@ -367,7 +304,7 @@ class AppConfig:
             check_file(self.whisper_model_path, "Model file")
             check_file(self.whisper_binary, "Whisper binary")
 
-        if self.aipp_provider not in ("ollama", "openai", "openrouter", "anthropic", "xai", "gigachat", "llamacpp_server", "openai_compatible"):
+        if self.aipp_provider not in AIPP_PROVIDERS:
             print(f"  ⚠️ Invalid AIPP provider: {self.aipp_provider}")
 
         # typing_delay: allow 0 (→ instant paste) up to 1 s per char
@@ -395,14 +332,6 @@ class AppConfig:
                 print("  ⚠️ aipp_openai_compatible_base_url not set in config.")
             if not self.data.get("aipp_openai_compatible_api_key"):
                 print("  ⚠️ aipp_openai_compatible_api_key not set in config.")
-
-        # Validate llama.cpp setup
-        if self.aipp_provider in ("llamacpp_server",):
-            status = self.validate_llamacpp_setup()
-            if self.aipp_provider == "llamacpp_server" and not status["server_available"]:
-                print("  ⚠️ llama-server not found but llamacpp_server provider selected")
-            if not status["default_model_available"]:
-                print("  ⚠️ Default llama.cpp model not found")
 
         # Warn if non-English language is set but an English-only (*.en) model is configured
         try:
@@ -497,7 +426,10 @@ class AppConfig:
             print(f"\n[config] Invalid aipp_active_prompt '{active}', resetting to 'default'")
             self.data["aipp_active_prompt"] = "default"
 
-        valid_providers = ["ollama", "openai", "openrouter", "anthropic", "xai", "llamacpp_server", "gigachat", "openai_compatible"]
+        valid_providers = list(AIPP_PROVIDERS)
+        for table in ("aipp_models", "aipp_selected_models"):
+            if isinstance(self.data.get(table), dict):
+                self.data[table].pop("llamacpp_server", None)      # provider removed in 2.0
         provider = self.data.get("aipp_provider", "ollama")
         if provider not in valid_providers:
             print(f"\n[config] Invalid aipp_provider '{provider}', resetting to 'ollama'")
@@ -510,11 +442,9 @@ class AppConfig:
         # their model dropdowns aren't blank.
         default_models = DEFAULT_CONFIG.get("aipp_models", {})
         default_selected = DEFAULT_CONFIG.get("aipp_selected_models", {})
-        # llamacpp_server is populated separately from the local model dir, so an
-        # empty list there is legitimate; for cloud providers it never is.
         for prov in valid_providers:
             cur = self.data.get("aipp_models", {}).get(prov)
-            if not cur and prov != "llamacpp_server" and default_models.get(prov):
+            if not cur and default_models.get(prov):
                 self.data["aipp_models"][prov] = list(default_models[prov])
             elif prov not in self.data.get("aipp_models", {}):
                 self.data["aipp_models"][prov] = list(default_models.get(prov, []))
@@ -535,82 +465,6 @@ class AppConfig:
     def aipp_model(self, value):
         prov = self.data.get("aipp_provider", "ollama")
         self.set_aipp_selected_model(value, prov)
-
-    # ---- llama.cpp helpers --------------------------------------------------
-    def get_llamacpp_model_path(self, model_name: str) -> str:
-        """Get the full path to a llama.cpp model."""
-        from voxd.paths import find_llamacpp_model_by_name
-        
-        model_path = find_llamacpp_model_by_name(model_name)
-        if model_path:
-            return str(model_path)
-        
-        # Fallback: assume it's in the models directory
-        filename = model_name if model_name.endswith('.gguf') else f"{model_name}.gguf"
-        return str(LLAMACPP_MODELS_DIR / filename)
-
-    def update_available_llamacpp_models(self):
-        """Update the aipp_models lists with available llama.cpp models."""
-        from voxd.paths import get_available_llamacpp_model_names
-        
-        available_models = get_available_llamacpp_model_names()
-        if not available_models:
-            # If no models found, keep the default as fallback
-            available_models = ["qwen2.5-3b-instruct-q4_k_m"]
-        
-        # Update llamacpp server provider
-        if "aipp_models" not in self.data:
-            self.data["aipp_models"] = {}
-        
-        self.data["aipp_models"]["llamacpp_server"] = available_models
-        
-        # Ensure selected models are valid
-        if "aipp_selected_models" not in self.data:
-            self.data["aipp_selected_models"] = {}
-            
-        for provider in ["llamacpp_server"]:
-            current_selected = self.data["aipp_selected_models"].get(provider, "")
-            if current_selected not in available_models:
-                # Set to the first available model, or default
-                if available_models:
-                    self.data["aipp_selected_models"][provider] = available_models[0]
-                else:
-                    self.data["aipp_selected_models"][provider] = "qwen2.5-3b-instruct-q4_k_m"
-        
-        self.save()
-
-    def validate_llamacpp_setup(self) -> dict[str, bool]:
-        """Check llama.cpp installation status."""
-        status = {
-            "server_available": False,
-            "cli_available": False, 
-            "default_model_available": False
-        }
-        
-        try:
-            from voxd.paths import llama_server
-            llama_server()
-            status["server_available"] = True
-        except (FileNotFoundError, ImportError):
-            pass
-        
-        try:
-            from voxd.paths import llama_cli
-            llama_cli()
-            status["cli_available"] = True
-        except (FileNotFoundError, ImportError):
-            pass
-        
-        try:
-            from voxd.paths import default_llamacpp_model
-            default_llamacpp_model()
-            status["default_model_available"] = True
-        except (FileNotFoundError, ImportError):
-            pass
-        
-        # python bindings check removed
-        
-        return status
 
 # Global singleton holder (defined after AppConfig)
 _APP_CONFIG = None

@@ -9,7 +9,7 @@ import threading
 import time
 
 from voxd.core.config import AppConfig, CONFIG_PATH
-from voxd.paths import DATA_DIR, LLAMACPP_MODELS_DIR
+from voxd.paths import DATA_DIR
 
 
 def _ensure_dir(p: Path) -> None:
@@ -339,113 +339,6 @@ def _gh_release_asset_url(repo: str, asset_name: str, tag: str | None = None) ->
     return ""
 
 
-def _ensure_llamacpp_server_prebuilt() -> str | None:
-    """Ensure llama-server exists, trying PATH then prebuilt download.
-    Returns absolute path to llama-server or None on failure.
-    """
-    which = shutil.which("llama-server")
-    if which:
-        try:
-            return str(Path(which).resolve())
-        except Exception:
-            return which
-
-    # Try prebuilt download into ~/.local/share/voxd/bin
-    bin_dir = Path.home() / ".local/share/voxd/bin"
-    try:
-        bin_dir.mkdir(parents=True, exist_ok=True)
-    except Exception:
-        pass
-    dest = bin_dir / "llama-server"
-    if dest.exists():
-        return str(dest.resolve())
-
-    arch, variant = _detect_cpu_variant()
-    if arch not in ("amd64", "arm64"):
-        return None
-    if arch == "amd64" and variant not in ("avx2", "sse42"):
-        # No compatible x86 feature → skip prebuilts
-        return None
-
-    if arch == "amd64":
-        base = f"llama-server_linux_{arch}_{variant}"
-    else:
-        base = f"llama-server_linux_{arch}"
-    asset = base + ".tar.gz"
-    repo = os.environ.get("VOXD_BIN_REPO", "jakovius/voxd-prebuilts")
-    tag = os.environ.get("VOXD_BIN_TAG", None)
-    url = _gh_release_asset_url(repo, asset, tag)
-    if not url:
-        return None
-
-    try:
-        import tarfile
-        import tempfile
-        import requests  # type: ignore
-        print("[setup] Ensuring llama-server binary…", flush=True)
-        with tempfile.TemporaryDirectory() as td:
-            tar_path = Path(td) / asset
-            if not _download_with_progress(url, tar_path, label="llama-server archive", timeout=60):
-                return None
-            with tarfile.open(tar_path, "r:gz") as tf:
-                tf.extractall(bin_dir)
-        try:
-            dest.chmod(0o755)
-        except Exception:
-            pass
-        if dest.exists():
-            return str(dest.resolve())
-    except Exception:
-        return None
-    return None
-
-
-def _ensure_llamacpp_default_model() -> str | None:
-    """Ensure the default llama.cpp model is available.
-    Returns absolute path or None on failure.
-    """
-    try:
-        model_dir = LLAMACPP_MODELS_DIR
-        model_dir.mkdir(parents=True, exist_ok=True)
-        model_file = model_dir / "qwen2.5-3b-instruct-q4_k_m.gguf"
-        if model_file.exists():
-            return str(model_file.resolve())
-        url = "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf?download=true"
-        if not _download_with_progress(url, model_file, label="AIPP model (qwen2.5-3b-instruct)", timeout=300):
-            return None
-        return str(model_file.resolve())
-    except Exception:
-        return None
-
-
-def _setup_llamacpp_user_components() -> None:
-    """Ensure llama-server binary and default model exist and write absolute paths to config.
-
-    UX: Download of the model can be lengthy; we show a spinner. The app remains
-    usable for transcription even if AIPP is not ready yet.
-    """
-    server_path = _ensure_llamacpp_server_prebuilt()
-    # Download model synchronously so user sees progress and completes setup fully
-    model_path = _ensure_llamacpp_default_model()
-    if not server_path and not model_path:
-        return
-    try:
-        cfg = AppConfig()
-        updated = False
-        if server_path:
-            cfg.data["llamacpp_server_path"] = server_path
-            cfg.llamacpp_server_path = server_path  # attribute mirror
-            updated = True
-        if model_path:
-            cfg.data["llamacpp_default_model"] = model_path
-            cfg.llamacpp_default_model = model_path
-            updated = True
-        if updated:
-            cfg.save()
-    except Exception:
-        pass
-
-
 def _install_desktop_launchers() -> None:
     # Copy icon
     try:
@@ -485,9 +378,7 @@ def _install_desktop_launchers() -> None:
         except Exception:
             pass
 
-    write_desktop("gui", "gui")
     write_desktop("tray", "tray")
-    write_desktop("flux", "flux")
 
     # Update caches best-effort
     try:
@@ -543,17 +434,3 @@ def run_user_setup(verbose: bool = False) -> None:
         cfg.save()
     except Exception:
         pass
-
-    # Ensure llama.cpp server and model (best-effort, packaged installs)
-    try:
-        _setup_llamacpp_user_components()
-        if verbose:
-          try:
-            print("[setup:v] llamacpp_server_path:", cfg.data.get("llamacpp_server_path"))
-            print("[setup:v] llamacpp_default_model:", cfg.data.get("llamacpp_default_model"))
-          except Exception:
-            pass
-    except Exception:
-        pass
-
-

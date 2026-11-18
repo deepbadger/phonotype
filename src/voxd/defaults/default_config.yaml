@@ -62,43 +62,13 @@ hallucination_blocklist:
   - "Please subscribe to my channel."
   - "Like and subscribe."
 
-# --- Flux (VAD-driven continuous dictation) ---------------------------------
-flux_min_silence_ms: 500     # pause to finalize an utterance
-flux_min_speech_ms: 200      # minimum speech before opening a segment
-flux_pre_roll_ms: 180        # prepend audio before detection
-# Flux VAD (single backend)
-flux_energy_start_margin_db: 6.0
-flux_energy_keep_margin_db: 3.0
-flux_energy_abs_start_db: -33.0
-flux_energy_abs_keep_db: -37.0
-flux_energy_use_absolute: false
-flux_energy_start_p: 0.55
-flux_energy_keep_p: 0.50
-# Legacy hysteresis thresholds (unused, kept for compatibility)
-flux_start_threshold: 0.6
-flux_end_threshold: 0.4
-flux_post_roll_ms: 150
-flux_min_segment_ms: 600
-flux_cooldown_ms: 250
-flux_min_rms_dbfs: -45.0
-
-# Monitor and calibration
-flux_monitor_enabled: true
-flux_monitor_energy_window_s: 10
-flux_monitor_spectrum_floor_db: -85.0
-flux_calibration_sec: 5
-flux_noise_ema: 0.05
-flux_noise_spec_ema: 0.02
-flux_noise_subtract_enabled: true
-
 # --- ✨ AIPP (AI post-processing) ------------------------------------------
 aipp_enabled: false
-aipp_provider: llamacpp_server  # ollama / openai / openrouter / anthropic / xai / gigachat / llamacpp_server / openai_compatible
+aipp_provider: ollama  # ollama / openai / openrouter / anthropic / xai / gigachat / openai_compatible
 aipp_active_prompt: default
 
 # List of models per provider
 aipp_models:
-  llamacpp_server: ["qwen2.5-3b-instruct-q4_k_m"]
   ollama: ["llama3.2:latest", "mistral:latest", "gemma3:latest", "qwen2.5-coder:1.5b"]
   openai: ["gpt-4o-mini-2024-07-18"]
   openrouter: ["openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet", "meta-llama/llama-3.1-8b-instruct"]
@@ -109,7 +79,6 @@ aipp_models:
 
 # Selected model per provider
 aipp_selected_models:
-  llamacpp_server: "qwen2.5-3b-instruct-q4_k_m"
   ollama: "llama3.2:latest"
   openai: "gpt-4o-mini-2024-07-18"
   openrouter: "openai/gpt-4o-mini"
@@ -129,13 +98,6 @@ aipp_temperature: 0.2
 # GigaChat (Sber) settings
 gigachat_scope: GIGACHAT_API_PERS    # or GIGACHAT_API_CORP
 gigachat_verify_ssl: true            # set false if Russian Trusted Root CA is missing
-
-# llama.cpp settings
-llamacpp_server_path: "llama.cpp/build/bin/llama-server"
-llamacpp_cli_path: "llama.cpp/build/bin/llama-cli"
-llamacpp_default_model: "llamacpp_models/qwen2.5-3b-instruct-q4_k_m.gguf"
-llamacpp_server_url: "http://localhost:8080"
-llamacpp_server_timeout: 30
 
 
 aipp_prompts:
