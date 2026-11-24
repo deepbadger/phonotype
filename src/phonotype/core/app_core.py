@@ -124,10 +124,12 @@ class CoreProcessThread(QThread):
         rec_start_dt = datetime.now()
         try:
             recorder.start_recording()
+            transcriber.prewarm()      # the model loads while the user speaks
         except Exception as e:
             # No usable audio input device — report and abort gracefully
             # instead of letting the exception crash the whole app.
             from phonotype.utils.libw import verr
+            transcriber.cancel_prewarm()
             verr(f"[app_core] Recording failed: {e}")
             self.status_changed.emit("No mic")
             self.finished.emit("")
@@ -141,6 +143,7 @@ class CoreProcessThread(QThread):
             rec_path = recorder.stop_recording(preserve=preserve)
         except Exception as e:
             from phonotype.utils.libw import verr
+            transcriber.cancel_prewarm()
             verr(f"[app_core] Could not finalize recording: {e}")
             self.status_changed.emit("Phonotype")
             self.finished.emit("")

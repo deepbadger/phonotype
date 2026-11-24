@@ -57,9 +57,14 @@ def run_core_process(cfg: AppConfig, *, preserve_audio=False, typing=False, appl
 
     # === Record
     recorder.start_recording()
-    input("[core_runner] Recording - press ENTER to stop.")
-    rec_start = datetime.now()
-    rec_path = recorder.stop_recording(preserve=preserve_audio)
+    transcriber.prewarm()              # the model loads while the user speaks
+    try:
+        input("[core_runner] Recording - press ENTER to stop.")
+        rec_start = datetime.now()
+        rec_path = recorder.stop_recording(preserve=preserve_audio)
+    except BaseException:
+        transcriber.cancel_prewarm()
+        raise
     rec_end = datetime.now()
 
     # === Fast audio preprocessing (analyze + attenuate if too hot)

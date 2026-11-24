@@ -140,6 +140,7 @@ Settings are edited in the settings window and stored in
 | `asr_engine` | `whisper` or `parakeet` |
 | `language` | Whisper language (ISO 639-1 or `auto`); ignored by Parakeet |
 | `whisper_gpu_enabled`, `whisper_gpu_device`, `whisper_vram_check` | GPU use (both engines) |
+| `asr_prewarm` | start the recogniser when recording starts, so the model loads while you speak (on by default) |
 | `typing_delay`, `paste_unicode`, `ctrl_v_paste` | how the text reaches the window |
 | `save_recordings` | keep the audio of every dictation |
 | `aipp_*` | AI post-processing |

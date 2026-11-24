@@ -134,6 +134,9 @@ DEFAULT_CONFIG = {
     # when the installed whisper-cli rejects the flag. Off by default because
     # some Vulkan driver/device combos handle flash attention poorly.
     "whisper_flash_attn": False,
+    # Start the recogniser when recording starts, so the model loads while
+    # the user speaks (the audio is piped to it when recording stops).
+    "asr_prewarm": True,
 
     # Drop transcripts that consist solely of a known Whisper hallucination
     # (the "subscribe to my channel" boilerplate it emits on silence/noise).

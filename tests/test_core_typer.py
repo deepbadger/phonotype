@@ -95,3 +95,54 @@ def test_paste_no_restore_when_caller_pre_copied(monkeypatch):
     # Clipboard ends up as the transcript itself — no restore loop needed.
     assert pc._store["last"] == "TRANSCRIPT"  # type: ignore[attr-defined]
 
+
+
+def _bare_typer(tool="/usr/bin/ydotool"):
+    from phonotype.core.typer import SimulatedTyper
+    t = SimulatedTyper.__new__(SimulatedTyper)
+    t.tool = tool
+    return t
+
+
+def test_ydotoold_check_does_not_need_systemd(monkeypatch):
+    """OpenRC box: the daemon is found by process, systemctl is never called."""
+    import subprocess
+    from types import SimpleNamespace
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd[0])
+        if cmd[0] == "systemctl":
+            raise FileNotFoundError("systemctl")
+        return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert _bare_typer()._check_ydotool_daemon() is True
+    assert calls == ["pgrep"]
+
+
+def test_ydotoold_check_falls_back_to_socket(monkeypatch, tmp_path):
+    import socket
+    import subprocess
+
+    def no_pgrep(cmd, **kw):
+        raise FileNotFoundError(cmd[0])
+
+    monkeypatch.setattr(subprocess, "run", no_pgrep)
+    sock_path = tmp_path / "ydo.sock"
+    monkeypatch.setenv("YDOTOOL_SOCKET", str(sock_path))
+    assert _bare_typer()._check_ydotool_daemon() is False
+    s = socket.socket(socket.AF_UNIX)
+    s.bind(str(sock_path))
+    try:
+        assert _bare_typer()._check_ydotool_daemon() is True
+    finally:
+        s.close()
+
+
+def test_ydotoold_start_uses_the_init_that_exists(monkeypatch):
+    import shutil
+    from phonotype.core.typer import SimulatedTyper
+    monkeypatch.setattr(shutil, "which", lambda c: "/sbin/rc-service" if c == "rc-service" else None)
+    assert SimulatedTyper._ydotoold_start_commands() == [
+        ["rc-service", "--user", "phonotype-ydotoold", "start"]]

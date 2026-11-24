@@ -2,6 +2,7 @@ import subprocess
 import time
 import shutil
 import os
+import stat
 import sys
 import select
 from phonotype.utils.libw import verbo
@@ -68,7 +69,8 @@ class SimulatedTyper:
                 print("[typer] ✅ ydotool daemon started successfully")
             else:
                 print("[typer] ⚠️ ydotool daemon auto-start failed - typing may be unreliable")
-                print("[typer] → Manual fix: 'systemctl --user start ydotoold.service' or 'rc-service --user phonotype-ydotoold start'")
+                hints = [" ".join(c) for c in self._ydotoold_start_commands()]
+                print("[typer] → Start it with: " + (" or ".join(hints) or "ydotoold"))
         
         verbo(f"[typer] Typing {'enabled' if self.enabled else 'disabled'} (backend: {self.backend}, tool: {self.tool})")
         
@@ -118,110 +120,55 @@ class SimulatedTyper:
         return False
 
     def _check_ydotool_daemon(self):
-        """Check if ydotoold daemon is running when using ydotool"""
+        """True when ydotoold is running (or the tool in use is not ydotool).
+
+        Independent of the init system: a live ``ydotoold`` process, or failing
+        that (no ``pgrep``) a socket at ``YDOTOOL_SOCKET``.
+        """
         if not self.tool or "ydotool" not in os.path.basename(self.tool):
             return True
-            
-        # Ensure consistent socket path for checks
-        os.environ.setdefault("YDOTOOL_SOCKET", str(Path.home() / ".ydotool_socket"))
-        sock = os.environ.get("YDOTOOL_SOCKET")
-        try:
-            # Prefer a quick socket probe: if ydotool can talk, the daemon is usable
-            if sock and os.path.exists(sock):
-                try:
-                    cp = subprocess.run(
-                        ["ydotool", "sleep", "0"],
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2
-                    )
-                    if cp.returncode == 0:
-                        return True
-                except Exception:
-                    pass
 
-            # Check if systemd service exists and is active
-            result = subprocess.run(
-                ["systemctl", "--user", "is-active", "ydotoold.service"],
-                capture_output=True, text=True, timeout=5
-            )
-            if result.returncode == 0:
-                return True
-            else:
-                verbo(f"[typer] ydotoold daemon not running (status: {result.stdout.strip()})")
-                # Also check if daemon is running manually (not via systemd)
-                try:
-                    pgrep_result = subprocess.run(
-                        ["pgrep", "-x", "ydotoold"],
-                        capture_output=True, timeout=3
-                    )
-                    if pgrep_result.returncode == 0:
-                        verbo("[typer] ydotoold daemon running manually")
-                        return True
-                except (subprocess.TimeoutExpired, FileNotFoundError):
-                    pass
-                return False
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            verbo("[typer] Cannot check ydotoold daemon status")
+        os.environ.setdefault("YDOTOOL_SOCKET", str(Path.home() / ".ydotool_socket"))
+        try:
+            found = subprocess.run(["pgrep", "-x", "ydotoold"],
+                                   capture_output=True, timeout=3)
+            return found.returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        try:
+            return stat.S_ISSOCK(os.stat(os.environ["YDOTOOL_SOCKET"]).st_mode)
+        except OSError:
             return False
-    
+
+    @staticmethod
+    def _ydotoold_start_commands() -> list[list[str]]:
+        """Commands that start the user's ydotoold service, for the init in use."""
+        commands = []
+        if shutil.which("rc-service"):
+            commands.append(["rc-service", "--user", "phonotype-ydotoold", "start"])
+        if shutil.which("systemctl"):
+            commands.append(["systemctl", "--user", "start", "ydotoold.service"])
+        return commands
+
     def _auto_start_ydotool_daemon(self):
-        """Attempt to automatically start ydotool daemon"""
+        """Start the user's ydotoold service; True once the daemon is up."""
         if not self.tool or "ydotool" not in os.path.basename(self.tool):
             return False
-            
-        try:
-            # First try systemctl start
-            result = subprocess.run(
-                ["systemctl", "--user", "start", "ydotoold.service"],
-                capture_output=True, text=True, timeout=5
-            )
-            if result.returncode == 0:
-                # Poll for readiness (handles 'activating' race)
-                for _ in range(6):
-                    if self._check_ydotool_daemon():
-                        return True
-                    time.sleep(0.5)
-            
-            # If systemctl failed, try with sg input (for immediate group access)
-            verbo("[typer] systemctl start failed, trying with sg input...")
-            
-            # Check if sg command is available
-            if not shutil.which("sg"):
-                verbo("[typer] sg command not available")
-                return False
-                
-            # Get current user and socket path
-            home_dir = os.path.expanduser("~")
-            socket_path = os.environ.get("YDOTOOL_SOCKET", f"{home_dir}/.ydotool_socket")
-            yd = shutil.which("ydotoold") or "ydotoold"
-            uid = os.getuid()
-            gid = os.getgid()
-            
-            # Try to start with sg input - background the daemon properly
-            cmd_str = f"nohup {yd} --socket-path='{socket_path}' --socket-own={uid}:{gid} >/dev/null 2>&1 &"
-            cmd = ["sg", "input", "-c", cmd_str]
-            
-            verbo(f"[typer] Starting ydotoold with command: {' '.join(cmd)}")
-            
-            # Start daemon in background
-            subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=5
-            )
-            
-            # Poll for readiness
-            for _ in range(8):
+
+        for cmd in self._ydotoold_start_commands():
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            except (OSError, subprocess.TimeoutExpired) as e:
+                verbo(f"[typer] {' '.join(cmd)}: {e}")
+                continue
+            if result.returncode != 0:
+                verbo(f"[typer] {' '.join(cmd)} failed: {(result.stderr or result.stdout).strip()}")
+                continue
+            for _ in range(6):          # the service may still be starting
                 if self._check_ydotool_daemon():
-                    verbo("[typer] ydotool daemon started with sg input")
                     return True
                 time.sleep(0.5)
-            verbo("[typer] ydotool daemon failed to start with sg input")
-            return False
-                
-        except Exception as e:
-            verbo(f"[typer] Failed to auto-start ydotool daemon: {e}")
-            return False
+        return False
 
     def _run_tool(self, cmd: list[str]):
         """Run *cmd* catching FileNotFoundError so GUI won't freeze."""

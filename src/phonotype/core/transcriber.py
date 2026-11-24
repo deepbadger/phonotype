@@ -65,11 +65,14 @@ def detect_compute_backend(stderr: str) -> str:
 
 
 def _extract_whisper_timings(stderr: str) -> str | None:
-    """Return whisper.cpp's 'total time' timing line from stderr, if present."""
+    """Model load and total time from the recogniser's stderr, e.g.
+    'load 870 ms, total 1015 ms'; None when it printed no timings."""
+    found = {}
     for line in (stderr or "").splitlines():
-        if "total time" in line.lower():
-            return line.strip()
-    return None
+        m = re.search(r"\b(load|total) time\s*=\s*([\d.]+)\s*ms", line)
+        if m:
+            found[m.group(1)] = f"{m.group(1)} {float(m.group(2)):.0f} ms"
+    return ", ".join(found[k] for k in ("load", "total") if k in found) or None
 
 
 def _is_gpu_oom_failure(stderr: str) -> bool:
@@ -485,6 +488,8 @@ class WhisperTranscriber:
         # Set if VK_DRIVER_FILES turns out to be ignored by the Vulkan loader, so
         # we stop trying to pin instead of failing every run.
         self._pin_unsupported = False
+        # A recogniser started by prewarm(), waiting for audio on stdin.
+        self._warm: dict | None = None
 
         # Warn if likely mismatch with an English-only model
         try:
@@ -494,26 +499,15 @@ class WhisperTranscriber:
         except Exception:
             pass
 
-    def transcribe(self, audio_path):
-        audio_file = Path(audio_path)
-        if not audio_file.exists():
-            raise FileNotFoundError(f"[transcriber] Audio file not found: {audio_file}")
-
-        verbo(f"[transcriber] Using binary: {self.binary_path}")
-        verbo(f"[transcriber] Using model: {self.model_path}")
-        verbo("[transcriber] Starting transcription...")
-        self.last_gpu_note = None
-
-        # Output prefix (no extension!)
-        output_prefix = self.output_dir / audio_file.stem
-        output_txt = output_prefix.with_suffix(".txt")
-
+    def _prepare(self, audio_arg: str, output_prefix: Path) -> dict:
+        """Command line and environment for one run on *audio_arg* (a path, or
+        '-' for stdin), with the GPU decisions that go with them."""
         if self.engine == "parakeet":
             # No -l: parakeet-tdt-0.6b-v3 detects the language itself.
             cmd = [
                 self.binary_path,
                 "-m", self.model_path,
-                "-f", str(audio_file),
+                "-f", audio_arg,
                 "-of", str(output_prefix),
                 "-otxt",
             ]
@@ -521,7 +515,7 @@ class WhisperTranscriber:
             cmd = [
                 self.binary_path,
                 "-m", self.model_path,
-                "-f", str(audio_file),
+                "-f", audio_arg,
                 "-l", self.language,
                 "-of", str(output_prefix),
                 "-otxt"  # <-- THIS is necessary to actually generate the .txt file
@@ -570,8 +564,102 @@ class WhisperTranscriber:
                 verbo(f"[transcriber] Multiple GPU drivers present; pinning Vulkan to "
                       f"{pinned_vendor.upper()} via {_VK_DRIVER_FILES_ENV}={pinned_icd.name}")
 
-        verbo(f"[transcriber] Running command: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+        return {"cmd": cmd, "env": env, "vram_note": vram_note,
+                "pinned_icd": pinned_icd, "pinned_vendor": pinned_vendor,
+                "output_txt": Path(output_prefix).with_suffix(".txt")}
+
+    # ── Warm start ───────────────────────────────────────────────────────
+    # Loading the model takes most of a short dictation's recognition time.
+    # Both CLIs load the model first and only then read the audio, and both
+    # accept it on stdin ('-f -'). So the process is started when recording
+    # starts and gets the WAV when recording stops: the model loads while the
+    # user speaks, and nothing stays in (V)RAM between dictations.
+
+    def prewarm(self) -> bool:
+        """Start the recogniser now and let it wait for audio on stdin.
+
+        Call when recording starts; transcribe() then uses the waiting process.
+        Returns False (and changes nothing) when ``asr_prewarm`` is off or the
+        process cannot be started; transcribe() works either way.
+        """
+        if self._warm is not None:
+            return True
+        if not _config_data().get("asr_prewarm", True):
+            return False
+        try:
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            run = self._prepare("-", self.output_dir / "dictation")
+            run["output_txt"].unlink(missing_ok=True)
+            verbo(f"[transcriber] Warm start: {' '.join(run['cmd'])}")
+            run["proc"] = subprocess.Popen(
+                run["cmd"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, env=run["env"])
+        except Exception as e:
+            verbo(f"[transcriber] Warm start unavailable: {e}")
+            return False
+        self._warm = run
+        return True
+
+    def cancel_prewarm(self) -> None:
+        """Stop a waiting recogniser (recording cancelled or failed)."""
+        run, self._warm = self._warm, None
+        if not run:
+            return
+        proc = run["proc"]
+        try:
+            proc.kill()
+            proc.communicate(timeout=5)
+        except Exception:
+            pass
+
+    def _finish_warm(self, audio_file: Path):
+        """Feed *audio_file* to the waiting recogniser. Returns (result, run),
+        or None when there is no usable warm process (caller runs normally)."""
+        run, self._warm = self._warm, None
+        if not run:
+            return None
+        proc = run["proc"]
+        try:
+            out, err = proc.communicate(input=audio_file.read_bytes())
+        except Exception as e:
+            verr(f"[transcriber] Warm start failed ({e}); running normally.")
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            return None
+        result = subprocess.CompletedProcess(
+            run["cmd"], proc.returncode,
+            (out or b"").decode("utf-8", "replace"), (err or b"").decode("utf-8", "replace"))
+        if result.returncode != 0 or not run["output_txt"].exists():
+            # Unknown flag, GPU out of memory, a build without stdin input…
+            # the normal path below knows how to retry each of them.
+            verbo(f"[transcriber] Warm start exited with {result.returncode}; running normally.")
+            return None
+        return result, run
+
+    def transcribe(self, audio_path):
+        audio_file = Path(audio_path)
+        if not audio_file.exists():
+            self.cancel_prewarm()
+            raise FileNotFoundError(f"[transcriber] Audio file not found: {audio_file}")
+
+        verbo(f"[transcriber] Using binary: {self.binary_path}")
+        verbo(f"[transcriber] Using model: {self.model_path}")
+        verbo("[transcriber] Starting transcription...")
+        self.last_gpu_note = None
+
+        warm = self._finish_warm(audio_file)
+        if warm:
+            result, run = warm
+        else:
+            # Output prefix (no extension!)
+            run = self._prepare(str(audio_file), self.output_dir / audio_file.stem)
+            verbo(f"[transcriber] Running command: {' '.join(run['cmd'])}")
+            result = subprocess.run(run["cmd"], capture_output=True, text=True, env=run["env"])
+        cmd, env = run["cmd"], run["env"]
+        vram_note, output_txt = run["vram_note"], run["output_txt"]
+        pinned_icd, pinned_vendor = run["pinned_icd"], run["pinned_vendor"]
 
         # Older whisper-cli builds don't know -fa: they exit immediately with
         # "unknown argument" before loading the model. Drop the flag, remember
@@ -657,10 +745,11 @@ class WhisperTranscriber:
                   "(CPU-only build or no usable GPU device). Run 'phonotype --diagnose'.")
         timings = _extract_whisper_timings(result.stderr)
         if timings:
-            verbo(f"[transcriber] {timings}")
-        # Full whisper.cpp diagnostics (device list, model load, per-stage timings).
-        if result.stderr.strip():
-            verbo("[transcriber] whisper.cpp stderr:\n" + result.stderr.rstrip())
+            verbo(f"[transcriber] {self.cli_name} timings: {timings}")
+        # The recogniser's full diagnostics (device list, model load, per-stage
+        # timings) are ~70 lines per dictation: only on request.
+        if result.stderr.strip() and os.environ.get("PHONOTYPE_ASR_DEBUG"):
+            verbo(f"[transcriber] {self.cli_name} stderr:\n" + result.stderr.rstrip())
 
         if not output_txt.exists():
             verr(f"[transcriber] Transcription failed: Expected output not found at {output_txt}")

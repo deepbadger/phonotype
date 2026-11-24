@@ -25,6 +25,13 @@ class _FakeTranscriber:
         self.delete_input = delete_input
         self.last_gpu_note = None
 
+    def prewarm(self):
+        self.prewarmed = True
+        return True
+
+    def cancel_prewarm(self):
+        self.prewarmed = False
+
     def transcribe(self, path):
         return "", None  # empty transcript → run() returns right after transcription
 

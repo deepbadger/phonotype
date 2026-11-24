@@ -46,6 +46,8 @@ whisper_vram_check: true
 # Pass -fa (flash attention) to whisper-cli: faster, smaller compute buffers
 # (helps VRAM-tight cards). Auto-disabled if the binary rejects the flag.
 whisper_flash_attn: false
+# Start the recogniser when recording starts: the model loads while you speak.
+asr_prewarm: true
 
 # Drop transcripts that consist solely of a known Whisper hallucination
 # (e.g. the "subscribe to my channel" phrases produced on silence/noise).
