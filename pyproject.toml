@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "phonotype"
-version = "2.1.0"  # bumped by release.sh
+version = "2.1.1"  # bumped by release.sh
 description = "Voice typing for Linux: dictate into any app (whisper.cpp / Parakeet), with optional LLM clean-up"
 authors = [{ name = "Dmitry" }]  # based on VOXD by Jakov Ivkovic (MIT), see LICENSE
 requires-python = ">=3.12"
