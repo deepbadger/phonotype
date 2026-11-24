@@ -33,8 +33,38 @@ def detect_backend():
         return session_type.lower()
     return "unknown"
 
+# Paste shortcuts: name → (ydotool key codes pressed in order, xdotool key name).
+# Neither works everywhere: terminals want Ctrl+Shift+V, most GUI programs
+# (KWrite and the rest of KDE) only Ctrl+V. Shift+Insert is not offered: in a
+# terminal it pastes something else (the mouse selection, or an image).
+PASTE_SHORTCUTS = {
+    "ctrl+shift+v": ((29, 42, 47), "ctrl+shift+v"),
+    "ctrl+v": ((29, 47), "ctrl+v"),
+}
+PASTE_LABELS = {"ctrl+shift+v": "Ctrl+Shift+V", "ctrl+v": "Ctrl+V"}
+
+
+def resolve_paste_shortcut(data: dict | None, alt: bool = False) -> str:
+    """The configured paste shortcut (``paste_shortcut``; the legacy
+    ``ctrl_v_paste`` toggle when it is unset), or ``paste_shortcut_alt``."""
+    data = data or {}
+    if alt:
+        value = str(data.get("paste_shortcut_alt") or "").lower()
+        if value in PASTE_SHORTCUTS:
+            return value
+        # default: the other one
+        return "ctrl+shift+v" if resolve_paste_shortcut(data) == "ctrl+v" else "ctrl+v"
+    value = str(data.get("paste_shortcut") or "").lower()
+    if value in PASTE_SHORTCUTS:
+        return value
+    return "ctrl+v" if data.get("ctrl_v_paste", False) else "ctrl+shift+v"
+
+
 class SimulatedTyper:
-    def __init__(self, delay=None, start_delay=None, cfg=None):
+    def __init__(self, delay=None, start_delay=None, cfg=None, paste_shortcut: str | None = None):
+        # One-off paste shortcut for this dictation (the second hotkey);
+        # None follows the config.
+        self.paste_shortcut = paste_shortcut if paste_shortcut in PASTE_SHORTCUTS else None
         # Accept delay in milliseconds or seconds – treat ≤0 as instant paste.
         if delay is None:
             delay_val = 10
@@ -320,9 +350,10 @@ class SimulatedTyper:
         if self.start_delay > 0:
             time.sleep(self.start_delay)
 
-        # Determine paste shortcut: Check config for real-time updates
-        use_ctrl_v = self.cfg and self.cfg.data.get("ctrl_v_paste", False)
-        paste_keys = "ctrl+v" if use_ctrl_v else "ctrl+shift+v"
+        # Paste shortcut: a one-off override, else the config (read now, so a
+        # change in Settings applies to the next dictation).
+        paste_keys = self.paste_shortcut or resolve_paste_shortcut(self.cfg.data if self.cfg else None)
+        codes, xdo_name = PASTE_SHORTCUTS[paste_keys]
 
         verbo(f"[typer] Pasting transcript via {self.tool} using {paste_keys}...")
 
@@ -332,23 +363,18 @@ class SimulatedTyper:
 
             if "xdotool" in tool_name:
                 subprocess.run(
-                    ["xdotool", "key", "--clearmodifiers", paste_keys],
+                    ["xdotool", "key", "--clearmodifiers", xdo_name],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     timeout=5
                 )
                 paste_ok = True
             elif "ydotool" in tool_name:
-                if use_ctrl_v:
-                    # Ctrl+V: Ctrl(29) + V(47)
-                    subprocess.run(["ydotool", "key", "29:1", "47:1", "47:0", "29:0"],
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                   timeout=5)
-                else:
-                    # Default Ctrl+Shift+V: Ctrl(29) + Shift(42) + V(47)
-                    subprocess.run(["ydotool", "key", "29:1", "42:1", "47:1", "47:0", "42:0", "29:0"],
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                   timeout=5)
+                # press in order, release in reverse
+                sequence = [f"{c}:1" for c in codes] + [f"{c}:0" for c in reversed(codes)]
+                subprocess.run(["ydotool", "key", *sequence],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               timeout=5)
                 paste_ok = True
             else:
                 print(f"[typer] ⚠️ Paste shortcut not supported for tool: {self.tool}")

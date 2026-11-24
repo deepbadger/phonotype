@@ -177,7 +177,9 @@ Settings are edited in the settings window and stored in
 | `language` | Whisper language (ISO 639-1 or `auto`); ignored by Parakeet |
 | `whisper_gpu_enabled`, `whisper_gpu_device`, `whisper_vram_check` | GPU use (both engines) |
 | `asr_prewarm` | start the recogniser when recording starts, so the model loads while you speak (on by default) |
-| `typing_delay`, `paste_unicode`, `ctrl_v_paste` | how the text reaches the window |
+| `typing_delay`, `paste_unicode` | how the text reaches the window |
+| `paste_shortcut` | `ctrl+shift+v` (terminals) or `ctrl+v` — see Troubleshooting |
+| `paste_shortcut_alt` | shortcut of the second hotkey; empty means the other of the two |
 | `save_recordings` | keep the audio of every dictation |
 | `aipp_*` | AI post-processing |
 
@@ -189,8 +191,10 @@ Environment overrides for development: `PHONOTYPE_WC_BIN`, `PHONOTYPE_PARAKEET_B
 ```bash
 phonotype --tray                 # the application
 phonotype --trigger-record       # start/stop recording in the running instance (hotkey)
+phonotype --trigger-record-alt   # the same, but paste with paste_shortcut_alt (second hotkey)
 phonotype --cancel-record        # discard the recording in progress (hotkey)
 phonotype --paste-last           # type the last dictation again (hotkey)
+phonotype --paste-last-alt       # the same with the second paste shortcut (hotkey)
 phonotype --diagnose             # binaries, models, ydotool, audio devices, GPU build
 phonotype --setup                # create config and launcher, report what is missing
 phonotype --version
@@ -203,6 +207,7 @@ phonotype                        # interactive CLI ('h' for commands); --rh, --t
 |---|---|
 | Hotkey does nothing | Phonotype is not running, or the hotkey still calls `voxd`. Run `phonotype --trigger-record` in a terminal. |
 | Text is recognised but not typed | Wayland: `ydotoold` is not running or you are not in the `input` group. `phonotype --diagnose` shows the daemon state. |
+| The dictation is in History but nothing appears in one program | That program does not paste on the configured shortcut: terminals need Ctrl+Shift+V, KWrite and most GUI programs only Ctrl+V. Tray → *Paste Last Dictation with Ctrl+V* (or a hotkey on `phonotype --paste-last-alt`) pastes it again the other way; a second hotkey on `phonotype --trigger-record-alt` dictates that way from the start. |
 | Empty or poor transcript | Microphone level too high (clipping) or the wrong input device — Settings → Audio. |
 | Recognition is slow | GPU not used: `phonotype --diagnose` shows whether `whisper-cli` was built with a GPU backend; a desktop that has eaten the VRAM forces the CPU. |
 | "No model" | Download one on Settings → Models. Parakeet also needs `parakeet-cli` on `PATH` (`./setup.sh`). |

@@ -146,3 +146,40 @@ def test_ydotoold_start_uses_the_init_that_exists(monkeypatch):
     monkeypatch.setattr(shutil, "which", lambda c: "/sbin/rc-service" if c == "rc-service" else None)
     assert SimulatedTyper._ydotoold_start_commands() == [
         ["rc-service", "--user", "phonotype-ydotoold", "start"]]
+
+
+def test_resolve_paste_shortcut():
+    from phonotype.core.typer import resolve_paste_shortcut as r
+    assert r({}) == "ctrl+shift+v"
+    assert r({"ctrl_v_paste": True}) == "ctrl+v"                       # legacy toggle
+    assert r({"ctrl_v_paste": True, "paste_shortcut": "ctrl+shift+v"}) == "ctrl+shift+v"
+    assert r({"paste_shortcut": "shift+insert"}) == "ctrl+shift+v"     # not offered
+    assert r({}, alt=True) == "ctrl+v"                                 # the other one
+    assert r({"paste_shortcut": "ctrl+v"}, alt=True) == "ctrl+shift+v"
+    assert r({"paste_shortcut_alt": "Ctrl+Shift+V"}, alt=True) == "ctrl+shift+v"
+
+
+def _paste_calls(monkeypatch, data, override=None):
+    import types
+    import phonotype.core.typer as typer_mod
+    calls = []
+    monkeypatch.setattr(typer_mod.subprocess, "run",
+                        lambda cmd, *a, **k: calls.append(cmd) or types.SimpleNamespace(returncode=0))
+    monkeypatch.setattr(typer_mod.time, "sleep", lambda *_a, **_k: None)
+    monkeypatch.setattr(typer_mod.shutil, "which", lambda c: "/usr/bin/" + c)
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+    cfg = type("C", (), {"data": {"paste_preserve_clipboard": False, **data}})()
+    t = _bare_typer()
+    t.cfg, t.start_delay, t.paste_shortcut = cfg, 0, override
+    t.flush_stdin = lambda: None
+    t._paste("текст")
+    return calls
+
+
+def test_paste_shortcut_key_sequences(monkeypatch):
+    assert _paste_calls(monkeypatch, {})[-1] == [
+        "ydotool", "key", "29:1", "42:1", "47:1", "47:0", "42:0", "29:0"]
+    assert _paste_calls(monkeypatch, {"paste_shortcut": "ctrl+v"})[-1] == [
+        "ydotool", "key", "29:1", "47:1", "47:0", "29:0"]
+    # the second hotkey overrides the configured shortcut for one dictation
+    assert _paste_calls(monkeypatch, {}, override="ctrl+v")[-1][2:] == ["29:1", "47:1", "47:0", "29:0"]

@@ -2,7 +2,7 @@ import socket
 import threading
 from pathlib import Path
 
-COMMANDS = ("trigger_record", "cancel_record", "paste_last")
+COMMANDS = ("trigger_record", "trigger_record_alt", "cancel_record", "paste_last", "paste_last_alt")
 
 
 def _socket_path():

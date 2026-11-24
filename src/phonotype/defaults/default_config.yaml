@@ -8,7 +8,12 @@ perf_accuracy_rating_collect: true
 typing: true
 typing_delay: 1
 typing_start_delay: 0.15
-ctrl_v_paste: false  # Use Ctrl+V instead of default Ctrl+Shift+V
+ctrl_v_paste: false  # legacy toggle, used only while paste_shortcut is empty
+# How the text is pasted: ctrl+shift+v (terminals) or ctrl+v.
+paste_shortcut: ""
+# Shortcut of the second hotkey (phonotype --trigger-record-alt) and of
+# --paste-last-alt. Empty: whichever paste_shortcut is not.
+paste_shortcut_alt: ""
 append_trailing_space: true
 verbosity: false
 autostart: false

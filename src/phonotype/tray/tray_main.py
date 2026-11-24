@@ -150,12 +150,14 @@ class PhonotypeTrayApp(QObject):
         bold = self.record_action.font()
         bold.setBold(True)
         self.record_action.setFont(bold)  # the main action stands out
-        self.record_action.triggered.connect(self.toggle_recording)
+        self.record_action.triggered.connect(lambda _=False: self.toggle_recording())
 
         self.cancel_action = QAction(_theme_icon("dialog-cancel", "process-stop"), "Cancel Recording")
         self.cancel_action.triggered.connect(lambda _=False: self.cancel_recording())
         self.paste_last_action = QAction(_theme_icon("edit-paste"), "Paste Last Dictation")
         self.paste_last_action.triggered.connect(lambda _=False: self.paste_last())
+        self.paste_last_alt_action = QAction(_theme_icon("edit-paste"), "Paste Last Dictation")
+        self.paste_last_alt_action.triggered.connect(lambda _=False: self.paste_last(alt=True))
 
         # --- New top-level actions --------------------------------------
         # History: past dictations with search
@@ -211,28 +213,40 @@ class PhonotypeTrayApp(QObject):
         if self.status == "Recording" and self.thread and self.thread.isRunning():
             self.thread.cancel_recording()
 
-    def paste_last(self):
-        """Type the last dictation again into the focused window."""
+    def paste_last(self, alt: bool = False):
+        """Type the last dictation again into the focused window; ``alt``
+        pastes it with the second shortcut (for a program the first one
+        did nothing in)."""
         text = self.last_transcript
         if not text or self.status != "Phonotype":
             return
         import threading
-        from phonotype.core.typer import SimulatedTyper
+        from phonotype.core.typer import SimulatedTyper, resolve_paste_shortcut
+        shortcut = resolve_paste_shortcut(self.cfg.data, alt=True) if alt else None
 
         def work():
             try:
                 typer = SimulatedTyper(delay=self.cfg.typing_delay,
-                                       start_delay=self.cfg.typing_start_delay, cfg=self.cfg)
-                typer.type(text)
+                                       start_delay=self.cfg.typing_start_delay, cfg=self.cfg,
+                                       paste_shortcut=shortcut)
+                if alt:
+                    typer._paste(text)      # always a paste, even for plain-ASCII text
+                else:
+                    typer.type(text)
             except Exception as e:
                 print(f"[tray] Paste last dictation failed: {e}")
 
         # Typing sleeps (focus delay, clipboard restore): keep it off the GUI thread.
         threading.Thread(target=work, daemon=True).start()
 
-    def toggle_recording(self):
+    def toggle_recording(self, alt: bool = False):
+        """Start, or stop and transcribe. ``alt``: the second hotkey — the key
+        that *stops* the recording decides which shortcut pastes the text."""
         if self.status == "Recording":
             if self.thread and self.thread.isRunning():
+                if alt:
+                    from phonotype.core.typer import resolve_paste_shortcut
+                    self.thread.paste_shortcut = resolve_paste_shortcut(self.cfg.data, alt=True)
                 self.thread.stop_recording()
             return
         if self.status in ("Transcribing", "Typing"):
@@ -348,8 +362,14 @@ class PhonotypeTrayApp(QObject):
         m.addAction(self.record_action)
         if self.status == "Recording":
             m.addAction(self.cancel_action)
-        self.paste_last_action.setEnabled(bool(self.last_transcript) and self.status == "Phonotype")
+        from phonotype.core.typer import PASTE_LABELS, resolve_paste_shortcut
+        can_paste = bool(self.last_transcript) and self.status == "Phonotype"
+        self.paste_last_action.setEnabled(can_paste)
         m.addAction(self.paste_last_action)
+        alt_keys = PASTE_LABELS[resolve_paste_shortcut(self.cfg.data, alt=True)]
+        self.paste_last_alt_action.setText(f"Paste Last Dictation with {alt_keys}")
+        self.paste_last_alt_action.setEnabled(can_paste)
+        m.addAction(self.paste_last_alt_action)
         m.addSeparator()
 
         m.addMenu(self.build_model_menu())
@@ -465,8 +485,10 @@ def main():
 
     # IPC callbacks run in the listener thread: hand over to the GUI thread.
     start_ipc_server(on_ipc_trigger, {
+        "trigger_record_alt": lambda: QTimer.singleShot(0, lambda: tray_app.toggle_recording(alt=True)),
         "cancel_record": lambda: QTimer.singleShot(0, tray_app.cancel_recording),
         "paste_last": lambda: QTimer.singleShot(0, tray_app.paste_last),
+        "paste_last_alt": lambda: QTimer.singleShot(0, lambda: tray_app.paste_last(alt=True)),
     })
     sys.exit(app.exec())
 

@@ -31,7 +31,7 @@ def test_menu_structure_follows_config(qapp, monkeypatch, tmp_path):
     import phonotype.tray.tray_main as T
     tray = T.PhonotypeTrayApp()
     assert _labels(tray.menu) == [
-        "Start Recording", "Paste Last Dictation", "---",
+        "Start Recording", "Paste Last Dictation", "Paste Last Dictation with Ctrl+V", "---",
         "Model: large-v3-russian-q5_0", "Language: Russian…", "AI Processing: Off", "---",
         "History…", "Performance…", "Settings…", "---",
         "Quit"]
@@ -83,3 +83,28 @@ def test_cancel_and_paste_last_follow_state(qapp, tmp_path, monkeypatch):
     assert not tray.paste_last_action.isEnabled()          # not while recording
     tray.cancel_recording()
     assert tray.thread.cancelled
+
+
+def test_second_hotkey_sets_paste_shortcut_on_stop(qapp, monkeypatch):
+    from phonotype.core.config import get_config
+    cfg = get_config()
+    monkeypatch.setattr(cfg, "save", lambda: None)
+    cfg.data["paste_shortcut"] = "ctrl+v"
+    import phonotype.tray.tray_main as T
+    tray = T.PhonotypeTrayApp()
+
+    class _Thread:
+        paste_shortcut = None
+        stopped = False
+        def isRunning(self): return True
+        def stop_recording(self): self.stopped = True
+
+    tray.thread = _Thread()
+    tray.set_status("Recording")
+    tray.toggle_recording(alt=True)
+    assert tray.thread.stopped and tray.thread.paste_shortcut == "ctrl+shift+v"
+
+    tray.thread = _Thread()
+    tray.toggle_recording()                      # the main hotkey leaves the config in charge
+    assert tray.thread.stopped and tray.thread.paste_shortcut is None
+    cfg.data["paste_shortcut"] = ""

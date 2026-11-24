@@ -321,6 +321,12 @@ def main():
         help="(Internal) signal the running Phonotype App to start recording - use for system-wide HOTKEY setup"
     )
     parser.add_argument(
+        "--trigger-record-alt",
+        action="store_true",
+        help="Like --trigger-record, but the text is pasted with the second shortcut "
+             "(paste_shortcut_alt) - for a second HOTKEY"
+    )
+    parser.add_argument(
         "--cancel-record",
         action="store_true",
         help="Discard the recording in progress in the running app (for a HOTKEY)"
@@ -329,6 +335,11 @@ def main():
         "--paste-last",
         action="store_true",
         help="Type the last dictation again in the running app (for a HOTKEY)"
+    )
+    parser.add_argument(
+        "--paste-last-alt",
+        action="store_true",
+        help="Like --paste-last, but with the second paste shortcut (for a HOTKEY)"
     )
     parser.add_argument(
         "--diagnose",
@@ -404,9 +415,13 @@ def main():
         from phonotype.utils.ipc_client import send_trigger
         send_trigger()
         sys.exit(0)
-    if args.cancel_record or args.paste_last:
+    for flag, command in (("trigger_record_alt", "trigger_record_alt"),
+                          ("cancel_record", "cancel_record"),
+                          ("paste_last", "paste_last"), ("paste_last_alt", "paste_last_alt")):
+        if not getattr(args, flag):
+            continue
         from phonotype.utils.ipc_client import send_command
-        ok = send_command("cancel_record" if args.cancel_record else "paste_last")
+        ok = send_command(command)
         sys.exit(0 if ok else 1)
 
     cfg = AppConfig()

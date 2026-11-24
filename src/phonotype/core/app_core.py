@@ -87,6 +87,9 @@ class CoreProcessThread(QThread):
         self.logger = logger
         self.should_stop = False
         self.cancelled = False
+        # Paste shortcut for this dictation when it was stopped with the second
+        # hotkey; None follows the config.
+        self.paste_shortcut = None
 
     def stop_recording(self):
         self.should_stop = True
@@ -214,6 +217,7 @@ class CoreProcessThread(QThread):
         # through a paste shortcut (delay <= 0 OR non-ASCII auto-paste). In
         # those cases _paste needs to read & restore the user's clipboard,
         # so we must NOT pre-overwrite it with the transcript here.
+        typer.paste_shortcut = self.paste_shortcut      # set by the hotkey that stopped us
         typing_will_paste = self.cfg.typing and typer.will_paste(final_text or "")
 
         if not typing_will_paste and final_text:

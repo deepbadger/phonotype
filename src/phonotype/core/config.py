@@ -76,7 +76,12 @@ DEFAULT_CONFIG = {
     "typing": True,
     "typing_delay": 1,
     "typing_start_delay": 0.15,
-    "ctrl_v_paste": False,  # Use Ctrl+V instead of default Ctrl+Shift+V
+    "ctrl_v_paste": False,  # legacy toggle, used only while paste_shortcut is empty
+    # ctrl+shift+v (terminals) | ctrl+v. Empty: follow ctrl_v_paste.
+    "paste_shortcut": "",
+    # Shortcut of the second hotkey (phonotype --trigger-record-alt) and of
+    # --paste-last-alt. Empty: whichever paste_shortcut is not.
+    "paste_shortcut_alt": "",
     # When True, non-ASCII text (e.g. Cyrillic) is delivered via clipboard paste
     # instead of ydotool/xdotool 'type'. Keycode-based typing is layout-dependent
     # and silently drops keys that don't map under the active keyboard layout.

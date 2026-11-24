@@ -491,8 +491,16 @@ class TypingPage(SettingsPage):
                     "So the next dictation doesn't stick to this one.")
 
         g = self.group("Paste")
-        self.toggle(g, "ctrl_v_paste", "Paste with Ctrl+V",
-                    "Off uses Ctrl+Shift+V, which terminals need.")
+        from phonotype.core.typer import resolve_paste_shortcut
+        self.paste_shortcut = self.choice(
+            g, "paste_shortcut", "Paste shortcut",
+            "Terminals need Ctrl+Shift+V; most other programs (KWrite, browsers) ignore it "
+            "and want Ctrl+V. The other one is always available on a second hotkey: bind "
+            "'phonotype --trigger-record-alt' to dictate with it, or "
+            "'phonotype --paste-last-alt' to paste the last dictation again with it.",
+            [("Ctrl+Shift+V (terminals)", "ctrl+shift+v"), ("Ctrl+V", "ctrl+v")], default="")
+        self._loaders.append(lambda: self.paste_shortcut.setCurrentIndex(
+            max(0, self.paste_shortcut.findData(resolve_paste_shortcut(self.cfg.data)))))
         self.toggle(g, "paste_unicode", "Paste non-Latin text instead of typing it",
                     "Key emulation drops characters that the active keyboard layout can't produce "
                     "(Cyrillic on a Latin layout).")
