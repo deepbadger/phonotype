@@ -505,6 +505,71 @@ class TypingPage(SettingsPage):
 
 
 # ---------------------------------------------------------------------------
+#   Vocabulary
+# ---------------------------------------------------------------------------
+class VocabularyPage(SettingsPage):
+    """One term per line, optionally followed by the spellings it is heard as."""
+
+    def __init__(self, cfg, parent: QWidget | None = None):
+        super().__init__(cfg, parent)
+        g = self.group("Vocabulary")
+        self.text = QPlainTextEdit()
+        self.text.setMinimumHeight(320)
+        self.text.setPlaceholderText(
+            "Kubernetes: кубернетес, кубернетис\nPhonotype: фонотайп\nydotool")
+        self._timer = QTimer(self)            # save shortly after typing stops
+        self._timer.setSingleShot(True)
+        self._timer.setInterval(600)
+        self._timer.timeout.connect(self.save)
+        self.text.textChanged.connect(self._on_edited)
+        self.row(g, "Names and terms", self.text,
+                 "One per line: the term as it must be written, then after a colon the "
+                 "spellings it gets recognised as, separated by commas. Saved as you type.",
+                 wide=True)
+        self.status = _hint_label("")
+        g.addWidget(self.status)
+        self.note = _hint_label(
+            "Listed spellings are replaced in every transcript. Whisper also gets the terms "
+            "as a recognition hint; Parakeet cannot take one. AI processing sees the list "
+            "and restores inflected forms.")
+        g.addWidget(self.note)
+        self._loaders.append(self._load)
+        self.finish()
+
+    def _load(self):
+        from phonotype.core import vocabulary
+        self.text.setPlainText(vocabulary.to_text(vocabulary.from_config(self.cfg.data)))
+        self._show_count()
+
+    def _show_count(self):
+        from phonotype.core import vocabulary
+        n = len(vocabulary.from_config(self.cfg.data))
+        self.status.setText("No terms yet." if not n else f"{n} term{'s' if n != 1 else ''} saved.")
+
+    def _on_edited(self):
+        if not self._loading:
+            self._timer.start()
+
+    def save(self):
+        """Write the editor text to the config (no-op when unchanged)."""
+        from phonotype.core import vocabulary
+        self._timer.stop()
+        if self._loading:
+            return
+        entries = vocabulary.parse_text(self.text.toPlainText())
+        if entries == vocabulary.from_config(self.cfg.data):
+            return
+        self.cfg.data["vocabulary"] = entries
+        self.cfg.save()
+        self._show_count()
+        self.changed.emit()
+
+    def hideEvent(self, event):
+        self.save()                 # don't lose text typed just before closing
+        super().hideEvent(event)
+
+
+# ---------------------------------------------------------------------------
 #   Audio
 # ---------------------------------------------------------------------------
 class AudioPage(SettingsPage):
@@ -835,8 +900,18 @@ class AppPage(SettingsPage):
         self.autostart_status.setVisible(False)
         g.addWidget(self.autostart_status)
 
+        g = self.group("History")
+        self.history = self.toggle(
+            g, "history_enabled", "Keep a history of dictations",
+            "Stores what was recognised and what was typed in the data folder; "
+            "tray menu → History… searches it. Off: nothing new is stored.")
+        self.history_days = self.spin(g, "history_days", "Keep for",
+                                      "0 keeps everything until you clear it.", 0, 3650, " days")
+        self.history.toggled.connect(lambda state: self.history_days.setEnabled(bool(state)))
+
         g = self.group("Logging")
-        self.toggle(g, "log_enabled", "Keep a session log of transcripts", "")
+        self.toggle(g, "log_enabled", "Keep a session log of transcripts",
+                    "Used by the interactive command-line mode.")
         self.path(g, "log_location", "Log folder", "Empty: the default data folder.",
                   placeholder="default", dir_only=True)
         self.toggle(g, "verbosity", "Verbose diagnostics",
@@ -852,6 +927,7 @@ class AppPage(SettingsPage):
 
     def after_reload(self):
         self.rating.setEnabled(self.perf.isChecked())
+        self.history_days.setEnabled(self.history.isChecked())
 
     def _on_autostart(self, enabled: bool):
         if self._loading or bool(self.cfg.data.get("autostart", False)) == enabled:
@@ -883,7 +959,8 @@ class SettingsWindow(QDialog):
 
     settingsChanged = pyqtSignal()
 
-    PAGES = (("recognition", "Recognition"), ("models", "Models"), ("typing", "Typing"),
+    PAGES = (("recognition", "Recognition"), ("models", "Models"),
+             ("vocabulary", "Vocabulary"), ("typing", "Typing"),
              ("audio", "Audio"), ("aipp", "AI processing"), ("app", "Application"))
 
     def __init__(self, cfg, parent: QWidget | None = None, page: str = "recognition"):
@@ -907,11 +984,13 @@ class SettingsWindow(QDialog):
 
         self.recognition = RecognitionPage(cfg)
         self.models = ModelsPage()
+        self.vocabulary = VocabularyPage(cfg)
         self.typing = TypingPage(cfg)
         self.audio = AudioPage(cfg)
         self.aipp = AippPage(cfg)
         self.app = AppPage(cfg)
         self._pages = {"recognition": self.recognition, "models": self.models,
+                       "vocabulary": self.vocabulary,
                        "typing": self.typing, "audio": self.audio,
                        "aipp": self.aipp, "app": self.app}
 
@@ -928,7 +1007,7 @@ class SettingsWindow(QDialog):
         self.recognition.open_models.connect(lambda: self.open_page("models"))
         self.recognition.changed.connect(self._on_recognition_changed)
         self.models.changed.connect(self._on_models_changed)
-        for p in (self.typing, self.audio, self.aipp, self.app):
+        for p in (self.vocabulary, self.typing, self.audio, self.aipp, self.app):
             p.changed.connect(self.settingsChanged.emit)
 
         self.open_page(page)

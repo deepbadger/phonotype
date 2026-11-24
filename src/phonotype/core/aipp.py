@@ -133,7 +133,11 @@ def run_aipp(text: str, cfg, prompt_key: str = None) -> str:
     prompt = prompts.get(prompt_key, "")
     if not prompt:
         prompt = "Summarize this text:"
-    full_prompt = f"{prompt}\n{text.strip()}"
+    from phonotype.core import vocabulary
+    note = vocabulary.prompt_note(vocabulary.from_config(cfg.data))
+    # The note goes first: the shipped prompts end with the "---" separator
+    # that must stay right before the transcript.
+    full_prompt = (f"{note}\n\n" if note else "") + f"{prompt}\n{text.strip()}"
 
     provider = cfg.data.get("aipp_provider", "local")
     global _proxy, _temperature

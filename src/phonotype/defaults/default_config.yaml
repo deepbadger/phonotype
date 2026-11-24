@@ -1,4 +1,7 @@
 log_enabled: true
+# Dictation history (tray → History…). 0 days keeps everything.
+history_enabled: true
+history_days: 30
 log_location: ''
 perf_collect: false
 perf_accuracy_rating_collect: true
@@ -51,6 +54,10 @@ asr_prewarm: true
 
 # Drop transcripts that consist solely of a known Whisper hallucination
 # (e.g. the "subscribe to my channel" phrases produced on silence/noise).
+# Names and terms to spell a fixed way (Settings → Vocabulary):
+#   - term: Kubernetes
+#     sounds_like: [кубернетес, кубернетис]
+vocabulary: []
 hallucination_filter_enabled: true
 hallucination_blocklist:
   - "Подписывайтесь на мой канал, ставьте лайки и пишите комментарии."

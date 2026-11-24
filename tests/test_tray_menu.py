@@ -31,9 +31,9 @@ def test_menu_structure_follows_config(qapp, monkeypatch, tmp_path):
     import phonotype.tray.tray_main as T
     tray = T.PhonotypeTrayApp()
     assert _labels(tray.menu) == [
-        "Start Recording", "---",
+        "Start Recording", "Paste Last Dictation", "---",
         "Model: large-v3-russian-q5_0", "Language: Russian…", "AI Processing: Off", "---",
-        "Session Log…", "Performance…", "Settings…", "---",
+        "History…", "Performance…", "Settings…", "---",
         "Quit"]
 
     # Parakeet detects the language itself → no Language item; AI state shows the model
@@ -59,3 +59,27 @@ def test_submenu_titles_leave_room_for_arrow(qapp):
     from phonotype.tray.tray_main import submenu_title
     assert submenu_title("Model: x").startswith("Model: x")
     assert submenu_title("Model: x").endswith("\u00a0" * 4)
+
+
+def test_cancel_and_paste_last_follow_state(qapp, tmp_path, monkeypatch):
+    from phonotype.core.config import get_config
+    monkeypatch.setattr(get_config(), "save", lambda: None)
+    import phonotype.tray.tray_main as T
+    tray = T.PhonotypeTrayApp()
+    assert not tray.paste_last_action.isEnabled()          # nothing dictated yet
+
+    tray.on_transcript_ready("hello")
+    assert tray.paste_last_action.isEnabled()
+
+    class _Thread:
+        cancelled = False
+        def isRunning(self): return True
+        def cancel_recording(self): self.cancelled = True
+
+    tray.thread = _Thread()
+    tray.set_status("Recording")
+    labels = [a.text() for a in tray.menu.actions() if not a.isSeparator()]
+    assert labels[:3] == ["Stop Recording", "Cancel Recording", "Paste Last Dictation"]
+    assert not tray.paste_last_action.isEnabled()          # not while recording
+    tray.cancel_recording()
+    assert tray.thread.cancelled

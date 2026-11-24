@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 import re
 from phonotype.utils.libw import verbo, verr
+from phonotype.core import vocabulary
 from phonotype.paths import find_whisper_cli, find_base_model, find_parakeet_cli, find_parakeet_model
 from phonotype.utils.languages import normalize_lang_code, is_valid_lang
 
@@ -521,6 +522,10 @@ class WhisperTranscriber:
                 "-of", str(output_prefix),
                 "-otxt"  # <-- THIS is necessary to actually generate the .txt file
             ]
+            # The user's vocabulary biases Whisper towards those spellings.
+            hint = vocabulary.whisper_prompt(vocabulary.from_config(_config_data()))
+            if hint:
+                cmd += ["--prompt", hint]
 
         # Force CPU when GPU is disabled (a GPU-built whisper-cli uses GPU by default).
         if not self.gpu_enabled:
@@ -795,4 +800,7 @@ class WhisperTranscriber:
             verbo(f"[transcriber] Dropped hallucination: {tscript!r}")
             return "", orig_tscript
 
-        return tscript, orig_tscript
+        fixed = vocabulary.apply(tscript, vocabulary.from_config(_config_data()))
+        if fixed != tscript:
+            verbo("[transcriber] Vocabulary replacements applied.")
+        return fixed, orig_tscript

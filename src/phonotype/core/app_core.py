@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (  # type: ignore
 )
 import yaml
 from phonotype.core.aipp import get_final_text
+from pathlib import Path
 from phonotype.core.transcriber import WhisperTranscriber  # type: ignore
 from phonotype.utils.languages import search_languages, code_to_name, normalize_lang_code, is_valid_lang
 
@@ -85,8 +86,14 @@ class CoreProcessThread(QThread):
         self.cfg = cfg
         self.logger = logger
         self.should_stop = False
+        self.cancelled = False
 
     def stop_recording(self):
+        self.should_stop = True
+
+    def cancel_recording(self):
+        """Stop and throw the recording away: nothing is recognised or typed."""
+        self.cancelled = True
         self.should_stop = True
 
     def run(self):
@@ -138,6 +145,20 @@ class CoreProcessThread(QThread):
             self.msleep(100)
         rec_end_dt = datetime.now()
 
+        if self.cancelled:
+            from phonotype.utils.libw import verbo
+            transcriber.cancel_prewarm()
+            try:
+                path = recorder.stop_recording(preserve=False)
+                if path:
+                    Path(path).unlink(missing_ok=True)
+            except Exception:
+                pass
+            verbo("[app_core] Recording cancelled.")
+            self.status_changed.emit("Phonotype")
+            self.finished.emit("")
+            return
+
         self.status_changed.emit("Transcribing")
         try:
             rec_path = recorder.stop_recording(preserve=preserve)
@@ -180,6 +201,14 @@ class CoreProcessThread(QThread):
                 self.logger.log_entry(tscript)
         except Exception:
             pass  # logging failures should never crash the thread
+        try:
+            from phonotype.core import history
+            ai_ran = bool(self.cfg.aipp_enabled and final_text and final_text != tscript)
+            history.add(final_text or tscript, tscript, cfg_data=self.cfg.data,
+                        model=Path(transcriber.model_path).name,
+                        prompt=self.cfg.data.get("aipp_active_prompt") if ai_ran else None)
+        except Exception as e:
+            print(f"[core] History not written: {e}")
 
         # Copy to clipboard unless the typer is going to route the text
         # through a paste shortcut (delay <= 0 OR non-ASCII auto-paste). In
@@ -233,49 +262,6 @@ class CoreProcessThread(QThread):
             write_perf_entry(perf_entry)
 
         self.finished.emit(final_text)
-
-def session_log_dialog(parent, logger):
-    """Open a (modal) window that shows the current session log and offers
-    the user to save it via a native file-dialog.
-
-    Parameters
-    ----------
-    parent : QWidget | None
-        Parent for the dialog (can be *None* in tray mode).
-    logger : SessionLogger
-        Logger instance whose current entries should be displayed and offered
-        for saving.
-    """
-
-    log_view = QDialog(parent)
-    log_view.setWindowTitle("Session Log")
-    log_view.setMinimumSize(600, 400)
-    log_view.setStyleSheet(DARK_DIALOG_QSS)
-
-    vbox = QVBoxLayout(log_view)
-
-    text_area = QTextEdit()
-    text_area.setReadOnly(True)
-    text_area.setStyleSheet("background-color: #1e1e1e; color: white;")
-    if logger.entries:
-        text_area.setText("\n".join(logger.entries))
-    else:
-        text_area.setText("No entries logged yet.")
-    vbox.addWidget(text_area)
-
-    btn_box = QDialogButtonBox()
-    save_btn = btn_box.addButton("Save log…", QDialogButtonBox.ButtonRole.ActionRole)
-    close_btn = btn_box.addButton(QDialogButtonBox.StandardButton.Close)
-
-    save_btn.clicked.connect(lambda _=False: logger.save())
-    close_btn.clicked.connect(log_view.close)
-
-    vbox.addWidget(btn_box)
-
-    log_view.setLayout(vbox)
-    log_view.exec()
-
-    return log_view
 
 # ----------------------------------------------------------------------------
 #   Performance viewer dialog (shared between GUI & tray)

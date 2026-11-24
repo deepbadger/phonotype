@@ -69,6 +69,9 @@ DEFAULT_CONFIG = {
     "perf_collect": False,
     "perf_accuracy_rating_collect": True,
     "log_enabled": True,
+    # Dictation history on disk (core/history.py); 0 days keeps everything.
+    "history_enabled": True,
+    "history_days": 30,
     "log_location": "",
     "typing": True,
     "typing_delay": 1,
@@ -140,6 +143,9 @@ DEFAULT_CONFIG = {
 
     # Drop transcripts that consist solely of a known Whisper hallucination
     # (the "subscribe to my channel" boilerplate it emits on silence/noise).
+    # Names and terms to spell a fixed way: [{"term": ..., "sounds_like": [...]}].
+    # See core/vocabulary.py; edited on Settings → Vocabulary.
+    "vocabulary": [],
     "hallucination_filter_enabled": True,
     "hallucination_blocklist": [
         "Подписывайтесь на мой канал, ставьте лайки и пишите комментарии.",

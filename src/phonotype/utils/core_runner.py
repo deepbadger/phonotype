@@ -113,6 +113,13 @@ def run_core_process(cfg: AppConfig, *, preserve_audio=False, typing=False, appl
     else:
         logger.log_entry(tscript)
     logger.save()
+    try:
+        from phonotype.core import history
+        history.add(ai_output or tscript, tscript, cfg_data=cfg.data,
+                    model=Path(transcriber.model_path).name,
+                    prompt=cfg.data.get("aipp_active_prompt") if ai_output else None)
+    except Exception as e:
+        verr(f"[core_runner] History not written: {e}")
 
     if not preserve_audio:
         recorder.cleanup_temp()

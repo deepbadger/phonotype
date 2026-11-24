@@ -63,3 +63,28 @@ def test_core_thread_honours_save_recordings(monkeypatch, save):
 
     assert _FakeRecorder.last.preserve is save
     assert _FakeTranscriber.last.delete_input is (not save)
+
+
+def test_cancelled_recording_is_not_transcribed(monkeypatch):
+    import phonotype.core.recorder as recorder_mod
+    import phonotype.core.app_core as app_core
+
+    class _NoTranscribe(_FakeTranscriber):
+        def transcribe(self, path):
+            raise AssertionError("a cancelled recording must not be transcribed")
+
+    monkeypatch.setattr(recorder_mod, "AudioRecorder", _FakeRecorder)
+    monkeypatch.setattr(app_core, "WhisperTranscriber", _NoTranscribe)
+    monkeypatch.setattr("phonotype.core.typer.SimulatedTyper", lambda *a, **kw: object())
+    monkeypatch.setattr("phonotype.core.clipboard.ClipboardManager", lambda *a, **kw: object())
+
+    t = app_core.CoreProcessThread(_Cfg(True), logger=None)
+    results, statuses = [], []
+    t.finished.connect(results.append)
+    t.status_changed.connect(statuses.append)
+    t.cancel_recording()
+    t.run()
+
+    assert results == [""] and statuses[-1] == "Phonotype"
+    assert _NoTranscribe.last.prewarmed is False         # the waiting recogniser was stopped
+    assert _FakeRecorder.last.preserve is False          # never kept, even with save_recordings

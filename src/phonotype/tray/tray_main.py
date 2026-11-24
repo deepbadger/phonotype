@@ -13,7 +13,6 @@ from phonotype.core.logger import SessionLogger
 from phonotype.utils.ipc_server import start_ipc_server
 from phonotype.core.app_core import (
     CoreProcessThread,
-    session_log_dialog,
     show_performance_dialog,
 )
 from phonotype.utils.performance import update_last_perf_entry
@@ -117,7 +116,11 @@ class PhonotypeTrayApp(QObject):
         self.cfg = get_config()
         self.logger = SessionLogger(self.cfg.log_enabled, self.cfg.log_location)
         self.status = "Phonotype"
-        self.last_transcript = ""
+        try:        # "Paste last dictation" survives a restart
+            from phonotype.core import history
+            self.last_transcript = history.last_text()
+        except Exception:
+            self.last_transcript = ""
         self.thread = None
         # True while the user has already been notified that dictation fell
         # back to CPU (VRAM exhausted); reset once a run uses the GPU again.
@@ -149,12 +152,15 @@ class PhonotypeTrayApp(QObject):
         self.record_action.setFont(bold)  # the main action stands out
         self.record_action.triggered.connect(self.toggle_recording)
 
+        self.cancel_action = QAction(_theme_icon("dialog-cancel", "process-stop"), "Cancel Recording")
+        self.cancel_action.triggered.connect(lambda _=False: self.cancel_recording())
+        self.paste_last_action = QAction(_theme_icon("edit-paste"), "Paste Last Dictation")
+        self.paste_last_action.triggered.connect(lambda _=False: self.paste_last())
+
         # --- New top-level actions --------------------------------------
-        # Session Log (opens viewer with option to save)
-        self.session_log_action = QAction(_theme_icon("view-history", "document-open-recent"), "Session Log…")
-        self.session_log_action.triggered.connect(
-            lambda _=False: session_log_dialog(None, self.logger)
-        )
+        # History: past dictations with search
+        self.history_action = QAction(_theme_icon("view-history", "document-open-recent"), "History…")
+        self.history_action.triggered.connect(lambda _=False: self._open_history())
 
         # Settings (config editor)
         self.settings_action = QAction(_theme_icon("configure", "preferences-system"), "Settings…")
@@ -199,6 +205,30 @@ class PhonotypeTrayApp(QObject):
             _theme_icon("media-playback-stop") if text == "Recording" else _theme_icon("media-record"))
         self.refresh_tray_menu()
         QApplication.processEvents()
+
+    def cancel_recording(self):
+        """Throw away the recording in progress (no recognition, nothing typed)."""
+        if self.status == "Recording" and self.thread and self.thread.isRunning():
+            self.thread.cancel_recording()
+
+    def paste_last(self):
+        """Type the last dictation again into the focused window."""
+        text = self.last_transcript
+        if not text or self.status != "Phonotype":
+            return
+        import threading
+        from phonotype.core.typer import SimulatedTyper
+
+        def work():
+            try:
+                typer = SimulatedTyper(delay=self.cfg.typing_delay,
+                                       start_delay=self.cfg.typing_start_delay, cfg=self.cfg)
+                typer.type(text)
+            except Exception as e:
+                print(f"[tray] Paste last dictation failed: {e}")
+
+        # Typing sleeps (focus delay, clipboard restore): keep it off the GUI thread.
+        threading.Thread(target=work, daemon=True).start()
 
     def toggle_recording(self):
         if self.status == "Recording":
@@ -316,6 +346,10 @@ class PhonotypeTrayApp(QObject):
         so the state is readable without opening them."""
         m = self.menu
         m.addAction(self.record_action)
+        if self.status == "Recording":
+            m.addAction(self.cancel_action)
+        self.paste_last_action.setEnabled(bool(self.last_transcript) and self.status == "Phonotype")
+        m.addAction(self.paste_last_action)
         m.addSeparator()
 
         m.addMenu(self.build_model_menu())
@@ -329,7 +363,7 @@ class PhonotypeTrayApp(QObject):
         m.addMenu(self.build_aipp_menu())
         m.addSeparator()
 
-        m.addAction(self.session_log_action)
+        m.addAction(self.history_action)
         m.addAction(self.performance_action)
         m.addAction(self.settings_action)
         m.addSeparator()
@@ -409,6 +443,10 @@ class PhonotypeTrayApp(QObject):
     def _open_model_manager(self):
         self._open_settings(page="models")
 
+    def _open_history(self):
+        from phonotype.gui.history_window import show_history_window
+        show_history_window(self.cfg)
+
     def _open_settings(self, page: str = "recognition"):
         from phonotype.gui.settings_window import show_settings_window
         show_settings_window(self.cfg, None, page)
@@ -425,7 +463,11 @@ def main():
     def on_ipc_trigger():
         QTimer.singleShot(0, tray_app.toggle_recording)
 
-    start_ipc_server(on_ipc_trigger)
+    # IPC callbacks run in the listener thread: hand over to the GUI thread.
+    start_ipc_server(on_ipc_trigger, {
+        "cancel_record": lambda: QTimer.singleShot(0, tray_app.cancel_recording),
+        "paste_last": lambda: QTimer.singleShot(0, tray_app.paste_last),
+    })
     sys.exit(app.exec())
 
 if __name__ == "__main__":

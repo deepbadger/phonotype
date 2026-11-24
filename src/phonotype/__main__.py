@@ -321,6 +321,16 @@ def main():
         help="(Internal) signal the running Phonotype App to start recording - use for system-wide HOTKEY setup"
     )
     parser.add_argument(
+        "--cancel-record",
+        action="store_true",
+        help="Discard the recording in progress in the running app (for a HOTKEY)"
+    )
+    parser.add_argument(
+        "--paste-last",
+        action="store_true",
+        help="Type the last dictation again in the running app (for a HOTKEY)"
+    )
+    parser.add_argument(
         "--diagnose",
         action="store_true",
         help="Print configuration and hotkey status"
@@ -394,6 +404,10 @@ def main():
         from phonotype.utils.ipc_client import send_trigger
         send_trigger()
         sys.exit(0)
+    if args.cancel_record or args.paste_last:
+        from phonotype.utils.ipc_client import send_command
+        ok = send_command("cancel_record" if args.cancel_record else "paste_last")
+        sys.exit(0 if ok else 1)
 
     cfg = AppConfig()
     # Session-only override for language

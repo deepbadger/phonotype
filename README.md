@@ -82,6 +82,11 @@ config that still selects `llamacpp_server` falls back to `ollama`.
    *Download and use*.
 4. Press the hotkey, speak, press it again.
 
+Two more commands are worth a hotkey of their own: `phonotype --cancel-record` throws
+away a recording you started by mistake, `phonotype --paste-last` types the last
+dictation again (for when the focus was in the wrong window). Both are in the tray menu
+too.
+
 ## Speech models
 
 Settings → **Models** lists what is on disk (engine, size, *Use* / *Delete*) and a
@@ -107,6 +112,37 @@ up automatically. `./add-hf-model.sh <hf-repo> <name> [--quantize q5_0]` convert
 HuggingFace Whisper checkpoint (for example a language-specific fine-tune).
 
 To compare engines on your own recordings: `tools/bench_asr.py`.
+
+## Vocabulary
+
+Settings → **Vocabulary**: names and terms that must be spelled a fixed way, one per
+line, optionally with the spellings they get recognised as:
+
+```
+Kubernetes: кубернетес, кубернетис
+Phonotype: фонотайп
+OpenRC
+```
+
+- Every listed spelling (and the term in the wrong letter case) is replaced in the
+  transcript — whole words only, with any engine, no LLM involved.
+- Whisper also receives the terms as a recognition hint. Parakeet has no such input.
+- AI post-processing sees the list and restores forms the plain replacement cannot
+  match (inflected Russian endings, for example).
+
+Stored as `vocabulary` in the config.
+
+## History
+
+Tray menu → **History…**: every dictation with the time, the model and, when AI
+processing changed it, the text as it was recognised next to the text that was typed.
+The search field looks in both. An entry can be copied or deleted; *Clear all…* wipes
+the lot.
+
+History is a local file, `~/.local/share/phonotype/history.jsonl` (readable only by
+you). Entries older than `history_days` (30 by default; 0 keeps everything) are dropped;
+`history_enabled: false` or Settings → Application turns recording off.
+*Paste Last Dictation* takes its text from here, so it survives a restart.
 
 ## AI post-processing
 
@@ -153,6 +189,8 @@ Environment overrides for development: `PHONOTYPE_WC_BIN`, `PHONOTYPE_PARAKEET_B
 ```bash
 phonotype --tray                 # the application
 phonotype --trigger-record       # start/stop recording in the running instance (hotkey)
+phonotype --cancel-record        # discard the recording in progress (hotkey)
+phonotype --paste-last           # type the last dictation again (hotkey)
 phonotype --diagnose             # binaries, models, ydotool, audio devices, GPU build
 phonotype --setup                # create config and launcher, report what is missing
 phonotype --version
