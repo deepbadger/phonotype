@@ -155,6 +155,8 @@ class CoreProcessThread(QThread):
         trans_end_ts = time()
         self.gpu_note.emit(getattr(transcriber, "last_gpu_note", None) or "")
         if not tscript:
+            from phonotype.utils.libw import verbo
+            verbo("[app_core] Empty transcript (silence or filtered); nothing to type.")
             self.finished.emit("")
             return
 

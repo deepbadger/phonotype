@@ -1,4 +1,5 @@
 import subprocess
+import time
 import os
 import json
 import shutil
@@ -619,6 +620,7 @@ class WhisperTranscriber:
         if not run:
             return None
         proc = run["proc"]
+        started = time.monotonic()
         try:
             out, err = proc.communicate(input=audio_file.read_bytes())
         except Exception as e:
@@ -636,6 +638,9 @@ class WhisperTranscriber:
             # the normal path below knows how to retry each of them.
             verbo(f"[transcriber] Warm start exited with {result.returncode}; running normally.")
             return None
+        # The recogniser's own "total time" includes the wait for audio, i.e.
+        # the whole recording; what matters is the time after it stopped.
+        run["warm_ms"] = (time.monotonic() - started) * 1000
         return result, run
 
     def transcribe(self, audio_path):
@@ -744,7 +749,11 @@ class WhisperTranscriber:
             verbo("[transcriber] GPU is enabled in config but whisper.cpp ran on CPU "
                   "(CPU-only build or no usable GPU device). Run 'phonotype --diagnose'.")
         timings = _extract_whisper_timings(result.stderr)
-        if timings:
+        if run.get("warm_ms") is not None:
+            load = re.match(r"load \d+ ms", timings or "")
+            verbo(f"[transcriber] {self.cli_name} timings: {run['warm_ms']:.0f} ms after "
+                  f"recording stopped" + (f" (model preloaded, {load.group(0)})" if load else ""))
+        elif timings:
             verbo(f"[transcriber] {self.cli_name} timings: {timings}")
         # The recogniser's full diagnostics (device list, model load, per-stage
         # timings) are ~70 lines per dictation: only on request.
